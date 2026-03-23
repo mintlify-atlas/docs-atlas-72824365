@@ -1,0 +1,114 @@
+{
+  "projectType": "saas",
+  "projectName": "StatHub",
+  "projectDescription": "StatHub is an open platform for hosting live sports scores and real-time text commentary, built with Node.js/Express, PostgreSQL, React, and WebSockets.",
+  "theme": "palm",
+  "primaryColor": "#16A34A",
+  "lightColor": "#DCFCE7",
+  "darkColor": "#14532D",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "deployment"]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/real-time",
+              "concepts/authentication",
+              "concepts/data-model"
+            ]
+          },
+          {
+            "group": "Server",
+            "pages": [
+              "server/setup",
+              "server/configuration",
+              "server/database",
+              "server/security"
+            ]
+          },
+          {
+            "group": "Client",
+            "pages": [
+              "client/setup",
+              "client/features"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["api/overview"]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/signup",
+              "api/auth/login",
+              "api/auth/google",
+              "api/auth/forgot-password",
+              "api/auth/reset-password"
+            ]
+          },
+          {
+            "group": "Matches",
+            "pages": [
+              "api/matches/list",
+              "api/matches/create"
+            ]
+          },
+          {
+            "group": "Commentary",
+            "pages": [
+              "api/commentary/list",
+              "api/commentary/create"
+            ]
+          },
+          {
+            "group": "WebSocket",
+            "pages": [
+              "api/websocket/overview",
+              "api/websocket/events"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time match score tracking via WebSockets",
+    "Live text commentary for matches",
+    "Match subscription system for targeted real-time updates",
+    "JWT-based authentication with Google OAuth support",
+    "Password reset via email (Resend)",
+    "Arcjet security middleware for API and WebSocket protection",
+    "PostgreSQL database with Drizzle ORM for type-safe queries",
+    "React frontend with Tailwind CSS",
+    "Docker support for both server and client deployment"
+  ],
+  "publicApiSurface": [
+    "GET /matches — List matches with optional limit",
+    "POST /matches — Create a new match",
+    "GET /matches/:id/commentary — List commentary for a match",
+    "POST /matches/:id/commentary — Add commentary to a match",
+    "POST /api/auth/signup — Register a new user",
+    "POST /api/auth/login — Login with email/password",
+    "POST /api/auth/google — Login with Google OAuth",
+    "POST /api/auth/forgot-password — Request password reset email",
+    "POST /api/auth/reset-password — Reset password with token",
+    "WS /ws — WebSocket endpoint for real-time events",
+    "WS event: match_created — Broadcast when a match is created",
+    "WS event: commentary — Broadcast to match subscribers when commentary is added",
+    "WS message: subscribe — Subscribe to a match's real-time commentary",
+    "WS message: unsubscribe — Unsubscribe from a match's real-time commentary"
+  ]
+}
