@@ -1,0 +1,260 @@
+---
+title: Real-time updates
+description: How StatHub's WebSocket server manages connections, subscriptions, heartbeats, and event broadcasts.
+---
+
+StatHub pushes live events to clients over WebSockets. When a match is created or a commentary entry is added through the REST API, the server immediately broadcasts the event — no polling required.
+
+## WebSocket endpoint
+
+```
+ws://localhost:8000/ws
+```
+
+The WebSocket server shares the same port as the HTTP server. The `/ws` path is the only path that accepts WebSocket upgrade requests; all other paths are rejected with an immediate `socket.destroy()`.
+
+## Connection lifecycle
+
+<Steps>
+  <Step title="Connect">
+    The client opens a WebSocket connection to `ws://localhost:8000/ws`. The server runs the Arcjet `wsSecurityMiddleware` check (rate limit: 5 connections per 2 seconds) before accepting the upgrade. If the check fails, the socket is destroyed.
+  </Step>
+  <Step title="Receive welcome">
+    Once the connection is established, the server immediately sends a `welcome` event:
+
+    ```json
+    { "type": "welcome" }
+    ```
+
+    The socket's `isAlive` flag is set to `true` and an empty `subscriptions` Set is attached to it.
+  </Step>
+  <Step title="Subscribe to a match">
+    The client sends a `subscribe` message with the match ID it wants to follow:
+
+    ```json
+    { "type": "subscribe", "matchId": 42 }
+    ```
+
+    The server adds the socket to the `matchSubscribers` Map under that match ID and confirms:
+
+    ```json
+    { "type": "subscribed", "matchId": 42 }
+    ```
+  </Step>
+  <Step title="Receive events">
+    While subscribed, the client receives `commentary` events for that match. All connected clients (regardless of subscriptions) receive `match_created` events.
+  </Step>
+  <Step title="Unsubscribe or disconnect">
+    The client sends an `unsubscribe` message, or closes the connection. On close, `cleanupSubscriptions` removes the socket from every entry in `matchSubscribers` and deletes empty Sets.
+  </Step>
+</Steps>
+
+## Subscription map
+
+Per-match subscriptions are tracked in a module-level `Map`:
+
+```js
+const matchSubscribers = new Map();
+// Map<matchId: number, Set<WebSocket>>
+```
+
+Each key is an integer match ID. The value is a `Set` of WebSocket instances currently subscribed to that match. When the last subscriber leaves, the key is deleted to avoid memory leaks.
+
+```js
+function subscribe(matchId, socket) {
+  if (!matchSubscribers.has(matchId)) {
+    matchSubscribers.set(matchId, new Set());
+  }
+  matchSubscribers.get(matchId).add(socket);
+}
+
+function unsubscribe(matchId, socket) {
+  const subscribers = matchSubscribers.get(matchId);
+  if (!subscribers) return;
+  subscribers.delete(socket);
+  if (subscribers.size === 0) {
+    matchSubscribers.delete(matchId);
+  }
+}
+```
+
+## Client messages
+
+The client sends JSON-encoded messages. Non-JSON input returns an `error` event.
+
+| `type` | Additional field | Description |
+|---|---|---|
+| `subscribe` | `matchId: number` | Subscribe to commentary events for a match |
+| `unsubscribe` | `matchId: number` | Unsubscribe from a match |
+
+<Warning>
+  `matchId` must be an integer. The server validates with `Number.isInteger(message.matchId)` and silently ignores messages that fail this check.
+</Warning>
+
+```js
+function handleMessage(socket, data) {
+  let message;
+  try {
+    message = JSON.parse(data.toString());
+  } catch (err) {
+    sendJson(socket, { type: "error", message: "Invalid JSON" });
+    return;
+  }
+
+  if (message?.type === "subscribe" && Number.isInteger(message.matchId)) {
+    subscribe(message.matchId, socket);
+    socket.subscriptions.add(message.matchId);
+    sendJson(socket, { type: "subscribed", matchId: message.matchId });
+    return;
+  }
+
+  if (message?.type === "unsubscribe" && Number.isInteger(message.matchId)) {
+    unsubscribe(message.matchId, socket);
+    socket.subscriptions.delete(message.matchId);
+    sendJson(socket, { type: "unsubscribed", matchId: message.matchId });
+  }
+}
+```
+
+## Server events
+
+<Tabs>
+  <Tab title="welcome">
+    Sent immediately after the connection is established.
+
+    ```json
+    { "type": "welcome" }
+    ```
+  </Tab>
+  <Tab title="subscribed">
+    Confirms a successful `subscribe` request.
+
+    ```json
+    { "type": "subscribed", "matchId": 42 }
+    ```
+  </Tab>
+  <Tab title="unsubscribed">
+    Confirms a successful `unsubscribe` request.
+
+    ```json
+    { "type": "unsubscribed", "matchId": 42 }
+    ```
+  </Tab>
+  <Tab title="match_created">
+    Broadcast to **all** connected clients when a new match is created via `POST /matches`.
+
+    ```json
+    {
+      "type": "match_created",
+      "data": {
+        "id": 42,
+        "sport": "football",
+        "homeTeam": "Arsenal",
+        "awayTeam": "Chelsea",
+        "status": "scheduled",
+        "startTime": "2026-03-23T15:00:00.000Z",
+        "endTime": "2026-03-23T17:00:00.000Z",
+        "homeScore": 0,
+        "awayScore": 0,
+        "hostId": 1,
+        "createdAt": "2026-03-23T14:00:00.000Z"
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="commentary">
+    Broadcast only to clients **subscribed** to the relevant match, triggered by `POST /matches/:id/commentary`.
+
+    ```json
+    {
+      "type": "commentary",
+      "data": {
+        "id": 101,
+        "matchId": 42,
+        "minute": 35,
+        "sequence": 5,
+        "period": "1st Half",
+        "eventType": "goal",
+        "actor": "Saka",
+        "team": "home",
+        "message": "Saka scores from the edge of the box!",
+        "metadata": null,
+        "tags": ["goal", "highlight"],
+        "createdAt": "2026-03-23T15:35:10.000Z"
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="error">
+    Sent when the server cannot parse the client's message as JSON.
+
+    ```json
+    { "type": "error", "message": "Invalid JSON" }
+    ```
+  </Tab>
+</Tabs>
+
+## Broadcast functions
+
+Two functions are returned by `attachWebSocketServer` and stored on `app.locals`:
+
+| Function | Target | Triggered by |
+|---|---|---|
+| `broadcastMatchCreated(match)` | All connected clients | `POST /matches` |
+| `broadcastCommentary(matchId, comment)` | Subscribers of `matchId` only | `POST /matches/:id/commentary` |
+
+```js
+function broadcastToAll(wss, payload) {
+  for (const client of wss.clients) {
+    if (client.readyState !== WebSocket.OPEN) continue;
+    client.send(JSON.stringify(payload));
+  }
+}
+
+function broadcastToMatch(matchId, payload) {
+  const subscribers = matchSubscribers.get(matchId);
+  if (!subscribers || subscribers.size === 0) return;
+  const message = JSON.stringify(payload);
+  for (const client of subscribers) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  }
+}
+```
+
+## Heartbeat and dead connection cleanup
+
+The server runs a ping/pong interval every 30 seconds to detect and terminate stale connections:
+
+```js
+const checkAliveStatus = setInterval(() => {
+  wss.clients.forEach((client) => {
+    if (client.isAlive === false) {
+      client.terminate();
+      return;
+    }
+    client.isAlive = false;
+    client.ping();
+  });
+}, 30 * 1000);
+```
+
+Each socket starts with `isAlive = true`. On every interval tick, `isAlive` is set to `false` and a ping is sent. When the client responds with a pong, `isAlive` is reset to `true`. If no pong is received before the next tick, the connection is terminated.
+
+<Note>
+  The interval is cleared when the WebSocket server itself closes, preventing resource leaks during shutdown.
+</Note>
+
+## Maximum payload size
+
+The WebSocket server is configured with a 1 MB maximum payload:
+
+```js
+const wss = new WebSocketServer({
+  noServer: true,
+  maxPayload: 1024 * 1024,
+});
+```
+
+Messages exceeding this size are rejected by the `ws` library before they reach `handleMessage`.

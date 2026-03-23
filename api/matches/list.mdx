@@ -1,0 +1,118 @@
+---
+title: List matches
+description: Fetch a paginated list of matches ordered by creation date, newest first.
+---
+
+Returns up to 100 matches ordered by `createdAt` descending. Use the `limit` query parameter to control how many records are returned.
+
+## Query parameters
+
+<ParamField query="limit" type="number">
+  Maximum number of matches to return. Defaults to `50`. Capped at `100`. Must be a positive integer.
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Human-readable status message. Always `"Fetched matches list."`
+</ResponseField>
+
+<ResponseField name="data" type="object[]">
+  Array of match objects.
+
+  <Expandable title="Match object properties">
+    <ResponseField name="id" type="number">
+      Unique match identifier.
+    </ResponseField>
+    <ResponseField name="sport" type="string">
+      Sport type (e.g., `"football"`, `"basketball"`).
+    </ResponseField>
+    <ResponseField name="homeTeam" type="string">
+      Name of the home team.
+    </ResponseField>
+    <ResponseField name="awayTeam" type="string">
+      Name of the away team.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Current match status. One of `scheduled`, `live`, or `finished`. Derived automatically from `startTime` and `endTime`.
+    </ResponseField>
+    <ResponseField name="startTime" type="string">
+      ISO 8601 datetime when the match starts.
+    </ResponseField>
+    <ResponseField name="endTime" type="string">
+      ISO 8601 datetime when the match ends.
+    </ResponseField>
+    <ResponseField name="homeScore" type="number">
+      Current score for the home team.
+    </ResponseField>
+    <ResponseField name="awayScore" type="number">
+      Current score for the away team.
+    </ResponseField>
+    <ResponseField name="hostId" type="number">
+      ID of the user who created the match.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 datetime when the record was created.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | Description |
+| ------ | ----------- |
+| `400`  | Invalid query parameters. The `details` field contains Zod validation issues. |
+| `500`  | Internal server error while fetching matches. |
+
+<RequestExample>
+
+```bash cURL
+curl --request GET \
+  --url 'http://localhost:8000/matches?limit=10'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "message": "Fetched matches list.",
+  "data": [
+    {
+      "id": 3,
+      "sport": "football",
+      "homeTeam": "Team A",
+      "awayTeam": "Team B",
+      "status": "finished",
+      "startTime": "2024-06-01T15:00:00.000Z",
+      "endTime": "2024-06-01T17:00:00.000Z",
+      "homeScore": 2,
+      "awayScore": 1,
+      "hostId": 1,
+      "createdAt": "2024-06-01T14:45:00.000Z"
+    }
+  ]
+}
+```
+
+```json 400
+{
+  "error": "Invalid Query.",
+  "details": [
+    {
+      "code": "too_big",
+      "path": ["limit"],
+      "message": "Number must be less than or equal to 100"
+    }
+  ]
+}
+```
+
+```json 500
+{
+  "error": "Failed to fetch the matches list. Internal Server Error"
+}
+```
+
+</ResponseExample>

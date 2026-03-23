@@ -1,0 +1,103 @@
+---
+title: Server setup
+description: How to install, configure, and run the StatHub server.
+---
+
+The StatHub server is a Node.js application built with Express. It exposes a REST API and a WebSocket endpoint for real-time match updates.
+
+## Prerequisites
+
+- **Node.js 18+** — the server uses native `--watch` for hot reload and ES modules
+- **pnpm** — the project uses pnpm as its package manager (`pnpm@10.30.3`)
+- **PostgreSQL** — a running PostgreSQL instance with a database created for StatHub
+
+## Setup
+
+<Steps>
+  <Step title="Clone the repository">
+    If you haven't already, clone the StatHub repository and navigate to the server directory:
+
+    ```bash
+    git clone <repository-url>
+    cd stathub/server
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all Node.js dependencies using pnpm:
+
+    ```bash
+    pnpm install
+    ```
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example environment file and fill in your values:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    At minimum, set `DATABASE_URL`, `JWT_SECRET`, and `CLIENT_URL`. See the [configuration reference](/server/configuration) for all available variables.
+  </Step>
+
+  <Step title="Run database migrations">
+    Apply the existing migrations to set up the database schema:
+
+    ```bash
+    pnpm db:migrate
+    ```
+  </Step>
+
+  <Step title="Start the server">
+    Start the server in development mode with hot reload:
+
+    ```bash
+    pnpm dev
+    ```
+
+    You should see output similar to:
+
+    ```
+    LOG: Database connection configured
+    LOG: Server is running at http://localhost:8000
+    LOG: WebSocket server is running at ws://localhost:8000/ws
+    ```
+  </Step>
+</Steps>
+
+## Available scripts
+
+| Script | Command | Description |
+|---|---|---|
+| `start` | `node src/index.js` | Run the server in production mode |
+| `dev` | `node --watch src/index.js` | Run with Node.js built-in hot reload |
+| `db:generate` | `drizzle-kit generate` | Generate a new migration from schema changes |
+| `db:migrate` | `drizzle-kit migrate` | Apply pending migrations to the database |
+| `db:studio` | `drizzle-kit studio` | Open Drizzle Studio for visual database inspection |
+
+<CodeGroup>
+```bash Development
+pnpm dev
+```
+
+```bash Production
+pnpm start
+```
+</CodeGroup>
+
+## Server endpoints
+
+Once running, the server exposes:
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | Health check — returns `Server is up and running!` |
+| `GET /matches` | Matches REST API |
+| `GET /matches/:id/commentary` | Per-match commentary REST API |
+| `POST /api/auth/*` | Authentication endpoints |
+| `ws://<host>:<port>/ws` | WebSocket endpoint for real-time events |
+
+<Note>
+  When `HOST` is set to `0.0.0.0`, the startup log displays `http://localhost:<PORT>` for convenience. The server is actually bound on all interfaces.
+</Note>

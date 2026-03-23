@@ -1,0 +1,170 @@
+---
+title: Create a match
+description: Create a new match. Status is automatically computed from the provided start and end times.
+---
+
+Inserts a new match record. The `status` field is derived automatically by comparing `startTime` and `endTime` against the current time — no manual status input is accepted.
+
+After a successful insert, a `match_created` WebSocket event is broadcast to all connected clients.
+
+<Info>
+  `homeScore` and `awayScore` both default to `0` if omitted.
+</Info>
+
+## Request body
+
+<ParamField body="sport" type="string" required>
+  Sport type (e.g., `"football"`, `"basketball"`). Must be a non-empty string.
+</ParamField>
+
+<ParamField body="homeTeam" type="string" required>
+  Name of the home team. Must be a non-empty string.
+</ParamField>
+
+<ParamField body="awayTeam" type="string" required>
+  Name of the away team. Must be a non-empty string.
+</ParamField>
+
+<ParamField body="startTime" type="string" required>
+  Match start time as an ISO 8601 datetime string (e.g., `"2024-06-01T15:00:00Z"`).
+</ParamField>
+
+<ParamField body="endTime" type="string" required>
+  Match end time as an ISO 8601 datetime string. Must be strictly after `startTime`.
+</ParamField>
+
+<ParamField body="homeScore" type="number" default="0">
+  Initial score for the home team. Must be a non-negative integer.
+</ParamField>
+
+<ParamField body="awayScore" type="number" default="0">
+  Initial score for the away team. Must be a non-negative integer.
+</ParamField>
+
+## Status computation
+
+The `status` field is set automatically using the following logic:
+
+| Condition | Status |
+| --------- | ------ |
+| Current time is before `startTime` | `scheduled` |
+| Current time is between `startTime` and `endTime` | `live` |
+| Current time is on or after `endTime` | `finished` |
+
+## Response
+
+<ResponseField name="message" type="string">
+  Human-readable status message. Always `"Match created"`.
+</ResponseField>
+
+<ResponseField name="event" type="object">
+  The created match record.
+
+  <Expandable title="Match object properties">
+    <ResponseField name="id" type="number">
+      Unique match identifier.
+    </ResponseField>
+    <ResponseField name="sport" type="string">
+      Sport type.
+    </ResponseField>
+    <ResponseField name="homeTeam" type="string">
+      Name of the home team.
+    </ResponseField>
+    <ResponseField name="awayTeam" type="string">
+      Name of the away team.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Computed status: `scheduled`, `live`, or `finished`.
+    </ResponseField>
+    <ResponseField name="startTime" type="string">
+      ISO 8601 match start time.
+    </ResponseField>
+    <ResponseField name="endTime" type="string">
+      ISO 8601 match end time.
+    </ResponseField>
+    <ResponseField name="homeScore" type="number">
+      Home team score.
+    </ResponseField>
+    <ResponseField name="awayScore" type="number">
+      Away team score.
+    </ResponseField>
+    <ResponseField name="hostId" type="number">
+      ID of the user who created the match.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 datetime when the record was created.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | Description |
+| ------ | ----------- |
+| `400`  | Invalid request body. The `details` field contains Zod validation issues, including the `endTime must be after startTime` constraint. |
+| `500`  | Internal server error while creating the match. |
+
+<Note>
+  WebSocket broadcast failures are caught silently — the HTTP response is unaffected if the broadcast fails.
+</Note>
+
+<RequestExample>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/matches \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "sport": "football",
+    "homeTeam": "Team A",
+    "awayTeam": "Team B",
+    "startTime": "2024-06-01T15:00:00Z",
+    "endTime": "2024-06-01T17:00:00Z",
+    "homeScore": 0,
+    "awayScore": 0
+  }'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "message": "Match created",
+  "event": {
+    "id": 4,
+    "sport": "football",
+    "homeTeam": "Team A",
+    "awayTeam": "Team B",
+    "status": "scheduled",
+    "startTime": "2024-06-01T15:00:00.000Z",
+    "endTime": "2024-06-01T17:00:00.000Z",
+    "homeScore": 0,
+    "awayScore": 0,
+    "hostId": 1,
+    "createdAt": "2024-05-31T10:00:00.000Z"
+  }
+}
+```
+
+```json 400
+{
+  "error": "Invalid Payload.",
+  "details": [
+    {
+      "code": "custom",
+      "path": ["endTime"],
+      "message": "endTime must be after startTime"
+    }
+  ]
+}
+```
+
+```json 500
+{
+  "error": "Failed to create a match."
+}
+```
+
+</ResponseExample>

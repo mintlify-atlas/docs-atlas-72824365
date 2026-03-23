@@ -1,0 +1,84 @@
+---
+title: Configuration
+description: Environment variable reference for the StatHub server.
+---
+
+The server is configured entirely through environment variables, loaded via `dotenv` at startup. Copy `.env.example` to `.env` in the `server/` directory and fill in the values before starting.
+
+## .env.example
+
+```env
+PORT=
+HOST=
+DATABASE_URL=
+
+# Arcjet
+ARCJET_KEY=
+ARCJET_ENV="development"
+ARCJET_MODE=
+JWT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# onboarding key
+# RESEND_API_KEY=
+# stathub key
+RESEND_API_KEY=
+CLIENT_URL=
+CLIENT_PASSWORD_RESET_URL=
+```
+
+## Variable reference
+
+### Server
+
+| Variable | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `PORT` | number | Optional | `8000` | Port the HTTP and WebSocket server listens on |
+| `HOST` | string | Optional | `0.0.0.0` | Interface the server binds to. Use `0.0.0.0` to listen on all interfaces |
+
+### Database
+
+| Variable | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `DATABASE_URL` | string | **Required** | — | PostgreSQL connection string. Format: `postgres://user:password@host:port/dbname` |
+
+<Warning>
+  The server throws at startup if `DATABASE_URL` is not set. Drizzle also logs an error if the variable is absent when running migration commands.
+</Warning>
+
+### Authentication
+
+| Variable | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `JWT_SECRET` | string | **Required** | — | Secret used to sign and verify JWT tokens. The server throws at startup if this is missing |
+| `GOOGLE_CLIENT_ID` | string | Optional | — | OAuth 2.0 client ID from Google Cloud Console, required for Google sign-in |
+| `GOOGLE_CLIENT_SECRET` | string | Optional | — | OAuth 2.0 client secret from Google Cloud Console, required for Google sign-in |
+
+### Security (Arcjet)
+
+| Variable | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `ARCJET_KEY` | string | Optional | — | API key for Arcjet. When absent, all Arcjet rules are disabled and requests pass through unprotected |
+| `ARCJET_ENV` | string | Optional | `"development"` | Arcjet environment label. Use `"development"` locally and `"production"` in production |
+| `ARCJET_MODE` | string | Optional | `LIVE` | Set to `DRY_RUN` to log decisions without enforcing them. Any value other than `DRY_RUN` is treated as `LIVE` |
+
+<Tip>
+  During local development, set `ARCJET_MODE=DRY_RUN` to see what Arcjet would block without affecting traffic.
+</Tip>
+
+### Email
+
+| Variable | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `RESEND_API_KEY` | string | Optional | — | API key for the Resend email service, used to send password-reset emails |
+
+### Client
+
+| Variable | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `CLIENT_URL` | string | Optional | — | Origin URL of the frontend application. Used as the CORS `origin` value and must exactly match the browser origin |
+| `CLIENT_PASSWORD_RESET_URL` | string | Optional | — | Full URL of the password-reset page in the frontend. Included in password-reset emails sent by the server |
+
+<Note>
+  `CLIENT_URL` must be set if your frontend and server run on different origins. Omitting it means the `cors` middleware will block cross-origin requests.
+</Note>

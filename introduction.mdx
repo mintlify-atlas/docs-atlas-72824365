@@ -1,0 +1,60 @@
+---
+title: Introduction
+description: StatHub is a full-stack, real-time sports scoring and commentary platform built with Express 5, React 19, and WebSockets.
+---
+
+StatHub lets you create sports matches, track live scores, and stream match commentary to every connected client in real time. The server broadcasts events over WebSockets the moment they happen, so the client never needs to poll.
+
+<Info>
+  StatHub is composed of two independently deployable services: an Express API server and a Vite + React client.
+</Info>
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Runtime | Node.js v18+ |
+| Framework | Express 5 |
+| Database | PostgreSQL + Drizzle ORM |
+| Real-time | WebSockets (`ws`) |
+| Auth | JWT, Google OAuth (`google-auth-library`) |
+| Email | Resend |
+| Security | Arcjet (`@arcjet/node`) |
+| Validation | Zod |
+| Client | React 19, React Router 7, Tailwind CSS 4 |
+| Build | Vite 7 |
+| Package manager | pnpm |
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Match management" icon="trophy">
+    Create and list sports matches with home/away teams, scores, sport type, and scheduled start and end times.
+  </Card>
+  <Card title="Live commentary" icon="microphone">
+    Post per-match commentary entries that are broadcast in real time to all connected WebSocket clients.
+  </Card>
+  <Card title="Real-time updates" icon="bolt">
+    WebSocket events (`match_created`, commentary) are pushed instantly to every connected client without polling.
+  </Card>
+  <Card title="JWT + Google OAuth" icon="lock">
+    Users can sign up with email/password or authenticate via Google. Sessions are managed with signed JWTs.
+  </Card>
+  <Card title="Arcjet security" icon="shield">
+    All API routes are protected by Arcjet middleware for rate limiting, bot detection, and shield rules.
+  </Card>
+  <Card title="Drizzle ORM" icon="database">
+    Type-safe database access with schema migrations managed by Drizzle Kit (`db:generate`, `db:migrate`).
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, configure environment variables, and run StatHub locally in minutes.
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/deployment">
+    Deploy the server and client as Docker containers using the included Dockerfiles and shell scripts.
+  </Card>
+</CardGroup>

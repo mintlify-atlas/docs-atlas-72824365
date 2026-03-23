@@ -1,0 +1,84 @@
+---
+title: Log in
+description: Authenticate an existing user with their email address and password.
+---
+
+`POST /api/auth/login`
+
+Verifies the user's credentials and returns a signed JWT. Soft-deleted accounts cannot log in.
+
+## Request body
+
+<ParamField body="email" type="string" required>
+  The user's registered email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The user's plain-text password.
+</ParamField>
+
+## Response
+
+**200 OK**
+
+<ResponseField name="user" type="object" required>
+  <Expandable title="properties">
+    <ResponseField name="id" type="number" required>
+      Auto-incrementing integer primary key.
+    </ResponseField>
+    <ResponseField name="name" type="string" required>
+      User's display name.
+    </ResponseField>
+    <ResponseField name="email" type="string" required>
+      User's email address.
+    </ResponseField>
+    <ResponseField name="role" type="string" required>
+      User role. One of `admin` or `user`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="token" type="string" required>
+  Signed JWT. Include this as `Authorization: Bearer <token>` on subsequent requests. Expires after 7 days.
+</ResponseField>
+
+## Error responses
+
+| Status | Error | Cause |
+|--------|-------|-------|
+| `400` | Zod issues array | `email` or `password` failed validation |
+| `400` | `Please login using Google or reset your password to create one.` | The account was created via Google OAuth and has no password set |
+| `401` | `Invalid credentials` | No account found for the email, the account is soft-deleted, or the password does not match |
+| `500` | `Something went wrong` | Unexpected server error |
+
+<Note>
+  Soft-deleted accounts (where `isDeleted` is `true` in the database) are excluded from the login query and return `401 Invalid credentials`, the same as a non-existent account.
+</Note>
+
+## Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/api/auth/login \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "email": "yeeshu@example.com",
+    "password": "Pass1234"
+  }'
+```
+
+</CodeGroup>
+
+```json Response
+{
+  "user": {
+    "id": 1,
+    "name": "Yeeshu",
+    "email": "yeeshu@example.com",
+    "role": "user"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```

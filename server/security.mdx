@@ -1,0 +1,218 @@
+---
+title: Security
+description: Overview of the security measures applied to the StatHub server, including Arcjet, authentication, input validation, CORS, and password hashing.
+---
+
+The StatHub server applies multiple layers of security to protect both its HTTP API and WebSocket endpoint.
+
+## Arcjet
+
+[Arcjet](https://arcjet.com) is the primary security layer. It runs as an Express middleware for HTTP requests and as an explicit check during WebSocket upgrades.
+
+Arcjet is enabled only when an `ARCJET_KEY` is present in the environment. When the key is absent, a warning is logged and all Arcjet rules are skipped — no requests are blocked.
+
+### HTTP protection
+
+All API routes are protected by the `securityMiddleware` function, which calls Arcjet's `protect()` method on every incoming request:
+
+```js
+app.use(securityMiddleware());
+```
+
+Three rules are active on the HTTP Arcjet instance:
+
+| Rule | Configuration | Description |
+|---|---|---|
+| `shield` | `mode: arcjetMode` | Detects and blocks common attack patterns (SQLi, XSS, path traversal, etc.) |
+| `detectBot` | Allow `CATEGORY:SEARCH_ENGINE`, `CATEGORY:PREVIEW` | Blocks automated bot traffic while permitting search crawlers and link preview agents |
+| `slidingWindow` | 50 requests per 10 seconds | Rate limits each client to 50 HTTP requests within any 10-second window |
+
+**Response codes when denied:**
+
+| Reason | HTTP status | Body |
+|---|---|---|
+| Rate limit exceeded | `429` | `{ "error": "Too Many Requests. Please try again after sometime." }` |
+| Bot or shield block | `403` | `{ "error": "Forbidden." }` |
+| Arcjet internal error | `503` | `{ "error": "Service Unavailable. Please try again later." }` |
+
+### WebSocket protection
+
+Arcjet is also evaluated during the WebSocket upgrade handshake before a connection is accepted. A separate, stricter Arcjet instance is used:
+
+| Rule | Configuration | Description |
+|---|---|---|
+| `shield` | `mode: arcjetMode` | Same attack-pattern detection as HTTP |
+| `detectBot` | Allow `CATEGORY:SEARCH_ENGINE`, `CATEGORY:PREVIEW` | Same bot detection as HTTP |
+| `slidingWindow` | 5 requests per 2 seconds | Tighter rate limit to prevent WebSocket connection flooding |
+
+If the check fails, the raw TCP socket is destroyed immediately — no WebSocket frame is ever sent to the client.
+
+**WebSocket close codes when denied:**
+
+| Reason | Close code | Message |
+|---|---|---|
+| Rate limit exceeded | `1013` | `Too Many Requests. Please try again after sometime.` |
+| Bot or shield block | `1008` | `Forbidden.` |
+| Arcjet internal error | `1011` | `Server security error. Please try again later.` |
+
+### Arcjet mode
+
+The `ARCJET_MODE` environment variable controls enforcement:
+
+| Value | Behavior |
+|---|---|
+| `DRY_RUN` | Rules are evaluated and logged but never enforced |
+| Any other value (or unset) | Rules are enforced in `LIVE` mode |
+
+<Tip>
+  Set `ARCJET_MODE=DRY_RUN` during development to observe Arcjet decisions without blocking any traffic.
+</Tip>
+
+## JWT authentication
+
+Protected routes use the `authenticate` middleware defined in `src/middlewares/authMiddleware.js`. It extracts the Bearer token from the `Authorization` header and verifies it using `jsonwebtoken`:
+
+```js
+// Expected header format
+Authorization: Bearer <token>
+```
+
+If the header is missing, malformed, or the token is invalid or expired, the middleware returns:
+
+```json
+{ "error": "Unauthorized" }
+```
+
+or
+
+```json
+{ "error": "Invalid or expired token" }
+```
+
+with an HTTP `401` status. On success, the decoded token payload is attached to `req.user` for downstream handlers.
+
+### Token configuration
+
+| Setting | Value | Source |
+|---|---|---|
+| Algorithm | HS256 (jsonwebtoken default) | — |
+| Expiry | `7d` | Hardcoded in `src/utils/jwt.js` |
+| Secret | `JWT_SECRET` env var | Required — server throws at startup if absent |
+
+## Password hashing
+
+User passwords are hashed with **bcrypt** (`bcryptjs`) using a salt round value of **12**:
+
+```js
+const SALT_ROUNDS = 12;
+```
+
+Passwords are never stored in plain text. The `password` column in the `users` table is nullable, allowing accounts created through Google OAuth to have no password at all.
+
+## CORS
+
+Cross-Origin Resource Sharing is configured with `cors` middleware. The allowed origin is read from the `CLIENT_URL` environment variable:
+
+```js
+app.use(
+  cors({
+    origin: CONFIG.CLIENT_URL,
+    credentials: true,
+  })
+);
+```
+
+`credentials: true` is required to allow the browser to include cookies and `Authorization` headers on cross-origin requests.
+
+<Warning>
+  `CLIENT_URL` must exactly match the origin of the frontend (scheme + host + port). A mismatch causes browsers to block all cross-origin API requests.
+</Warning>
+
+## Input validation
+
+All user-supplied input is validated with **Zod** before reaching route handlers. The validation schemas are defined in `src/validation/`.
+
+<Tabs>
+  <Tab title="Auth">
+    **Sign-up** (`signupSchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `name` | string, min 2 chars, max 100 chars |
+    | `email` | valid email format |
+    | `password` | string, min 8 chars, max 15 chars |
+
+    **Login** (`loginSchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `email` | valid email format |
+    | `password` | non-empty string |
+  </Tab>
+  <Tab title="Matches">
+    **Create match** (`createMatchSchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `sport` | non-empty string |
+    | `homeTeam` | non-empty string |
+    | `awayTeam` | non-empty string |
+    | `startTime` | ISO 8601 datetime |
+    | `endTime` | ISO 8601 datetime, must be after `startTime` |
+    | `homeScore` | non-negative integer (optional) |
+    | `awayScore` | non-negative integer (optional) |
+
+    **Update score** (`updateScoreSchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `homeScore` | non-negative integer |
+    | `awayScore` | non-negative integer |
+
+    **List matches query** (`listMatchesQuerySchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `limit` | positive integer, max 100 (optional) |
+
+    **Match ID param** (`matchIdParamSchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `id` | positive integer (coerced from string) |
+  </Tab>
+  <Tab title="Commentary">
+    **Create commentary** (`createCommentarySchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `sequence` | integer |
+    | `eventType` | string |
+    | `message` | string |
+    | `minute` | non-negative integer (optional) |
+    | `period` | string (optional) |
+    | `actor` | string (optional) |
+    | `team` | string (optional) |
+    | `metadata` | record of unknown values (optional) |
+    | `tags` | array of strings (optional) |
+
+    **List commentary query** (`listCommentaryQuerySchema`):
+
+    | Field | Rules |
+    |---|---|
+    | `limit` | positive integer, max 100 (optional) |
+  </Tab>
+</Tabs>
+
+## WebSocket payload limit
+
+The WebSocket server is created with a hard `maxPayload` limit of **1 MB** (1,048,576 bytes):
+
+```js
+const wss = new WebSocketServer({
+  noServer: true,
+  maxPayload: 1024 * 1024,
+});
+```
+
+Messages exceeding this size are rejected by the `ws` library before reaching application code.

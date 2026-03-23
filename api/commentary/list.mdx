@@ -1,0 +1,124 @@
+---
+title: List commentary
+description: Fetch commentary entries for a specific match, ordered by creation date, newest first.
+---
+
+Returns commentary entries for the match identified by `:id`, ordered by `createdAt` descending. Use the `limit` parameter to control how many entries are returned.
+
+## Path parameters
+
+<ParamField path="id" type="number" required>
+  The match ID. Must be a positive integer.
+</ParamField>
+
+## Query parameters
+
+<ParamField query="limit" type="number">
+  Maximum number of entries to return. Defaults to `100`. Capped at `100`. Must be a positive number.
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object[]">
+  Array of commentary entry objects.
+
+  <Expandable title="Commentary entry properties">
+    <ResponseField name="id" type="number">
+      Unique commentary entry identifier.
+    </ResponseField>
+    <ResponseField name="matchId" type="number">
+      ID of the match this entry belongs to.
+    </ResponseField>
+    <ResponseField name="minute" type="number">
+      Match minute the event occurred. May be `null` if not provided.
+    </ResponseField>
+    <ResponseField name="sequence" type="number">
+      Ordering sequence number for this entry.
+    </ResponseField>
+    <ResponseField name="period" type="string">
+      Match period (e.g., `"1st Half"`, `"2nd Half"`, `"Overtime"`). May be `null`.
+    </ResponseField>
+    <ResponseField name="eventType" type="string">
+      Type of event (e.g., `"goal"`, `"foul"`, `"substitution"`, `"kick-off"`).
+    </ResponseField>
+    <ResponseField name="actor" type="string">
+      Name of the player involved. May be `null`.
+    </ResponseField>
+    <ResponseField name="team" type="string">
+      Team associated with the event: `"home"`, `"away"`, or `null`.
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Commentary text describing the event.
+    </ResponseField>
+    <ResponseField name="metadata" type="object">
+      Flexible key-value store for additional event data. May be `null`.
+    </ResponseField>
+    <ResponseField name="tags" type="string[]">
+      Array of string tags for filtering. May be `null`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 datetime when the record was created.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | Description |
+| ------ | ----------- |
+| `400`  | Invalid match ID. The `id` path parameter could not be coerced to a positive integer. |
+| `400`  | Invalid query parameters. The `details` field contains Zod validation issues. |
+| `500`  | Internal server error while fetching commentary. |
+
+<RequestExample>
+
+```bash cURL
+curl --request GET \
+  --url 'http://localhost:8000/matches/2/commentary?limit=50'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 200
+{
+  "data": [
+    {
+      "id": 7,
+      "matchId": 2,
+      "minute": 45,
+      "sequence": 120,
+      "period": "1st Half",
+      "eventType": "goal",
+      "actor": "Alex Doe",
+      "team": "home",
+      "message": "Goal scored by Alex Doe for Team A",
+      "metadata": { "assist": "John Doe" },
+      "tags": ["goal", "shot"],
+      "createdAt": "2024-06-01T15:46:00.000Z"
+    }
+  ]
+}
+```
+
+```json 400
+{
+  "error": "Invalid match ID.",
+  "details": [
+    {
+      "code": "too_small",
+      "path": ["id"],
+      "message": "Number must be greater than 0"
+    }
+  ]
+}
+```
+
+```json 500
+{
+  "error": "Failed to fetch commentary."
+}
+```
+
+</ResponseExample>

@@ -1,0 +1,139 @@
+---
+title: Database
+description: PostgreSQL setup, Drizzle ORM configuration, migrations, and schema overview for the StatHub server.
+---
+
+StatHub uses **PostgreSQL** as its database and **Drizzle ORM** for schema definition, query building, and migrations.
+
+## Connection
+
+The database connection is established in `src/db/db.js` using a `pg` connection pool:
+
+```js
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg from "pg";
+
+const { Pool } = pg;
+
+export const pool = new Pool({
+  connectionString: CONFIG.DATABASE_URL,
+});
+
+export const db = drizzle(pool);
+```
+
+The connection string format is:
+
+```
+postgres://user:password@host:port/dbname
+```
+
+Set this as the `DATABASE_URL` environment variable. The server throws immediately at startup if this variable is not present.
+
+## Drizzle configuration
+
+The `drizzle.config.js` file at the root of the `server/` directory tells Drizzle Kit where to find the schema and where to write migrations:
+
+```js
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  schema: "./src/db/schema.js",
+  out: "./drizzle",
+  dialect: "postgresql",
+  dbCredentials: {
+    url: CONFIG.DATABASE_URL,
+  },
+});
+```
+
+| Option | Value | Description |
+|---|---|---|
+| `schema` | `./src/db/schema.js` | Source file Drizzle Kit reads to infer the schema |
+| `out` | `./drizzle` | Directory where generated SQL migration files are written |
+| `dialect` | `postgresql` | Target database dialect |
+
+## Database commands
+
+<Steps>
+  <Step title="Generate a migration">
+    After modifying `src/db/schema.js`, generate a new SQL migration file:
+
+    ```bash
+    pnpm db:generate
+    ```
+
+    Drizzle Kit compares the current schema against the last snapshot and writes a new `.sql` file into `drizzle/`.
+  </Step>
+
+  <Step title="Apply migrations">
+    Run all pending migrations against the database:
+
+    ```bash
+    pnpm db:migrate
+    ```
+
+    This command must be run before starting the server for the first time, and again after any schema change.
+  </Step>
+
+  <Step title="Inspect the database visually">
+    Launch Drizzle Studio, a browser-based UI for browsing and editing database tables:
+
+    ```bash
+    pnpm db:studio
+    ```
+
+    Drizzle Studio opens at `https://local.drizzle.studio` by default.
+  </Step>
+</Steps>
+
+## Migration files
+
+Migration SQL files live in the `drizzle/` directory alongside a `meta/` folder that stores Drizzle Kit's schema snapshots:
+
+```
+drizzle/
+├── 0000_giant_nebula.sql
+├── 0001_clever_vargas.sql
+├── 0002_yellow_magdalene.sql
+├── 0003_remarkable_iron_fist.sql
+├── 0004_greedy_power_man.sql
+└── meta/
+    ├── _journal.json
+    ├── 0000_snapshot.json
+    ├── 0001_snapshot.json
+    ├── 0002_snapshot.json
+    ├── 0003_snapshot.json
+    └── 0004_snapshot.json
+```
+
+Do not edit these files manually. Always use `pnpm db:generate` to produce new migrations.
+
+## Schema overview
+
+The schema is defined in `src/db/schema.js` and contains three tables and two enums.
+
+### Enums
+
+| Enum | Values |
+|---|---|
+| `match_status` | `scheduled`, `live`, `finished` |
+| `user_role` | `admin`, `user` |
+
+### Tables
+
+<CardGroup cols={3}>
+  <Card title="users" icon="user">
+    Stores authenticated users. The `password` column is nullable to support Google OAuth accounts. Roles default to `user`.
+  </Card>
+  <Card title="matches" icon="trophy">
+    Stores sport matches with home/away teams, scores, status, and a reference to the hosting user (`host_id`).
+  </Card>
+  <Card title="commentary" icon="message">
+    Stores per-match commentary events. Each row belongs to a match and carries an `event_type`, optional `minute`, `actor`, `team`, and flexible `metadata` and `tags` fields.
+  </Card>
+</CardGroup>
+
+<Note>
+  For the full column-level schema reference, see the data model concept page.
+</Note>

@@ -1,0 +1,131 @@
+---
+title: Architecture
+description: How StatHub's Express REST API, WebSocket server, PostgreSQL database, and React client fit together.
+---
+
+StatHub is composed of two deployable services — a Node.js server and a React client — that communicate over both HTTP and WebSockets. The server itself is a single Node.js process that runs an Express application and a WebSocket server on the same underlying `http.Server` instance.
+
+## System diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    React Client                         │
+│          (Vite + React 19 + React Router 7)             │
+│                                                         │
+│   HTTP requests (fetch)    WebSocket (ws://.../ws)      │
+└───────────┬─────────────────────────┬───────────────────┘
+            │                         │
+            ▼                         ▼
+┌─────────────────────────────────────────────────────────┐
+│                  http.Server (Node.js)                  │
+│                                                         │
+│  ┌──────────────────────┐  ┌───────────────────────┐   │
+│  │   Express App        │  │  WebSocketServer      │   │
+│  │                      │  │  (noServer: true)     │   │
+│  │  /matches            │  │                       │   │
+│  │  /matches/:id/       │  │  /ws endpoint         │   │
+│  │    commentary        │  │                       │   │
+│  │  /api/auth           │  │  broadcastToAll()     │   │
+│  │                      │  │  broadcastToMatch()   │   │
+│  │  securityMiddleware  │  │  wsSecurityMiddleware │   │
+│  └──────────┬───────────┘  └───────────┬───────────┘   │
+│             │                          │               │
+│             └──────────┬───────────────┘               │
+│                        │ app.locals.broadcastMatchCreated│
+│                        │ app.locals.broadcastCommentary  │
+└────────────────────────┼────────────────────────────────┘
+                         │
+                         ▼
+            ┌────────────────────────┐
+            │   PostgreSQL           │
+            │   (Drizzle ORM)        │
+            │                       │
+            │   users               │
+            │   matches             │
+            │   commentary          │
+            └────────────────────────┘
+```
+
+## Server bootstrap
+
+The entry point `src/index.js` creates a single `http.Server` from the Express app, then attaches the WebSocket server to it:
+
+```js
+const app = express();
+const server = http.createServer(app);
+
+// HTTP routes
+app.use("/matches", matchesRouter);
+app.use("/matches/:id/commentary", commentaryRouter);
+app.use("/api/auth", authRouter);
+
+// WebSocket server shares the same http.Server
+const { broadcastMatchCreated, broadcastCommentary } = attachWebSocketServer(server);
+app.locals.broadcastMatchCreated = broadcastMatchCreated;
+app.locals.broadcastCommentary = broadcastCommentary;
+
+server.listen(PORT, HOST);
+```
+
+Broadcast functions are stored on `app.locals` so that route handlers can call them without importing the WebSocket server directly.
+
+## Route structure
+
+| Mount path | Router | Description |
+|---|---|---|
+| `GET /matches` | `matchesRouter` | List all matches |
+| `POST /matches` | `matchesRouter` | Create a match and broadcast `match_created` |
+| `GET /matches/:id/commentary` | `commentaryRouter` | List commentary for a match |
+| `POST /matches/:id/commentary` | `commentaryRouter` | Add commentary and broadcast `commentary` |
+| `POST /api/auth/signup` | `authRouter` | Email/password registration |
+| `POST /api/auth/login` | `authRouter` | Email/password login |
+| `POST /api/auth/google` | `authRouter` | Google OAuth |
+| `POST /api/auth/forgot-password` | `authRouter` | Initiate password reset |
+| `POST /api/auth/reset-password` | `authRouter` | Complete password reset |
+
+## WebSocket attachment
+
+`attachWebSocketServer` is called with `noServer: true`, meaning the WebSocket server does not bind its own port. Instead, it hooks into the HTTP server's `upgrade` event:
+
+```js
+server.on("upgrade", async (req, socket, head) => {
+  const { pathname } = new URL(req.url, `${protocol}://${req.headers.host}`);
+
+  if (pathname !== "/ws" || req.headers.upgrade?.toLowerCase() !== "websocket") {
+    socket.destroy();
+    return;
+  }
+
+  // Arcjet security check before accepting the upgrade
+  const { success } = await wsSecurityMiddleware(req);
+  if (!success) {
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit("connection", ws, req);
+  });
+});
+```
+
+Only `GET /ws` upgrade requests pass through. All others are destroyed immediately.
+
+## Database layer
+
+StatHub uses PostgreSQL accessed through [Drizzle ORM](https://orm.drizzle.team). The schema defines three tables (`users`, `matches`, `commentary`) and two enums (`match_status`, `user_role`). See [Data model](/concepts/data-model) for the full schema.
+
+## Security layer
+
+All HTTP routes pass through the Arcjet `securityMiddleware` before reaching any route handler. WebSocket upgrades pass through `wsSecurityMiddleware` before the connection is accepted. Both middlewares apply shield rules, bot detection, and sliding-window rate limits — with different limits for HTTP (`50 req / 10s`) and WebSocket (`5 req / 2s`).
+
+<Info>
+  When `ARCJET_KEY` is not set, both middlewares are no-ops and all requests pass through. This allows local development without an Arcjet account.
+</Info>
+
+## Broadcast flow
+
+When a route handler writes to the database, it immediately triggers a broadcast:
+
+- `POST /matches` → inserts a row → calls `app.locals.broadcastMatchCreated(event)` → sends `match_created` to **all** connected WebSocket clients.
+- `POST /matches/:id/commentary` → inserts a row → calls `app.locals.broadcastCommentary(matchId, result)` → sends `commentary` only to clients subscribed to that match.

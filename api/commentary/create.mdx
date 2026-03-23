@@ -1,0 +1,174 @@
+---
+title: Create commentary
+description: Add a commentary entry to a match. Triggers a WebSocket event to all clients subscribed to that match.
+---
+
+Inserts a new commentary entry for the match identified by `:id`. After a successful insert, a `commentary` WebSocket event is broadcast only to clients subscribed to that specific match.
+
+<Info>
+  Unlike the `match_created` broadcast which reaches all connected clients, commentary events are scoped to subscribers of the specific match.
+</Info>
+
+## Path parameters
+
+<ParamField path="id" type="number" required>
+  The match ID. Must be a positive integer.
+</ParamField>
+
+## Request body
+
+<ParamField body="eventType" type="string" required>
+  Type of event being recorded (e.g., `"goal"`, `"foul"`, `"substitution"`, `"kick-off"`).
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  Commentary text describing the event.
+</ParamField>
+
+<ParamField body="sequence" type="number" required>
+  Integer sequence number used for ordering entries within a match.
+</ParamField>
+
+<ParamField body="minute" type="number">
+  Match minute when the event occurred. Must be a non-negative integer.
+</ParamField>
+
+<ParamField body="period" type="string">
+  Match period label (e.g., `"1st Half"`, `"2nd Half"`, `"Overtime"`).
+</ParamField>
+
+<ParamField body="actor" type="string">
+  Name of the player involved in the event.
+</ParamField>
+
+<ParamField body="team" type="string">
+  Team associated with the event. Typically `"home"` or `"away"`.
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Flexible key-value object for additional event data (e.g., `{ "assist": "John Doe" }`).
+</ParamField>
+
+<ParamField body="tags" type="string[]">
+  Array of strings used for filtering commentary entries (e.g., `["goal", "shot"]`).
+</ParamField>
+
+## Response
+
+<ResponseField name="data" type="object">
+  The created commentary entry.
+
+  <Expandable title="Commentary entry properties">
+    <ResponseField name="id" type="number">
+      Unique commentary entry identifier.
+    </ResponseField>
+    <ResponseField name="matchId" type="number">
+      ID of the match this entry belongs to.
+    </ResponseField>
+    <ResponseField name="minute" type="number">
+      Match minute the event occurred. May be `null`.
+    </ResponseField>
+    <ResponseField name="sequence" type="number">
+      Ordering sequence number.
+    </ResponseField>
+    <ResponseField name="period" type="string">
+      Match period label. May be `null`.
+    </ResponseField>
+    <ResponseField name="eventType" type="string">
+      Type of event.
+    </ResponseField>
+    <ResponseField name="actor" type="string">
+      Player name involved. May be `null`.
+    </ResponseField>
+    <ResponseField name="team" type="string">
+      Team associated with the event. May be `null`.
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Commentary text.
+    </ResponseField>
+    <ResponseField name="metadata" type="object">
+      Flexible extra event data. May be `null`.
+    </ResponseField>
+    <ResponseField name="tags" type="string[]">
+      Array of string tags. May be `null`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 datetime when the record was created.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | Description |
+| ------ | ----------- |
+| `400`  | Invalid match ID. The `id` path parameter could not be coerced to a positive integer. |
+| `400`  | Invalid request body. The `details` field contains Zod validation issues. |
+| `500`  | Internal server error while creating the commentary entry. |
+
+<Note>
+  WebSocket broadcast failures are caught silently — the HTTP response is unaffected if the broadcast fails.
+</Note>
+
+<RequestExample>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/matches/2/commentary \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "eventType": "goal",
+    "message": "Goal scored by Alex Doe for Team A",
+    "sequence": 120,
+    "minute": 45,
+    "period": "1st Half",
+    "actor": "Alex Doe",
+    "team": "home",
+    "metadata": { "assist": "John Doe" },
+    "tags": ["goal", "shot"]
+  }'
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json 201
+{
+  "data": {
+    "id": 7,
+    "matchId": 2,
+    "minute": 45,
+    "sequence": 120,
+    "period": "1st Half",
+    "eventType": "goal",
+    "actor": "Alex Doe",
+    "team": "home",
+    "message": "Goal scored by Alex Doe for Team A",
+    "metadata": { "assist": "John Doe" },
+    "tags": ["goal", "shot"],
+    "createdAt": "2024-06-01T15:46:00.000Z"
+  }
+}
+```
+
+```json 400
+{
+  "error": "Invalid commentary payload.",
+  "details": [
+    {
+      "code": "invalid_type",
+      "path": ["sequence"],
+      "message": "Required"
+    }
+  ]
+}
+```
+
+```json 500
+{
+  "error": "Failed to create commentary."
+}
+```
+
+</ResponseExample>

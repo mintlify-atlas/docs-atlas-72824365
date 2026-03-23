@@ -1,0 +1,91 @@
+---
+title: Google OAuth
+description: Authenticate using a Google OAuth authorization code obtained from the Google Identity flow.
+---
+
+`POST /api/auth/google`
+
+Exchanges a Google OAuth authorization code for an ID token, verifies it, then either creates a new user or links the Google identity to an existing account. Returns a signed JWT.
+
+<Info>
+  The server uses `redirectUri: "postmessage"`, which is the redirect URI expected by the `@react-oauth/google` client library when using the authorization code flow.
+</Info>
+
+## How it works
+
+1. The client obtains an authorization `code` from Google using `@react-oauth/google`.
+2. The server exchanges the code with Google using `OAuth2Client.getToken()` and verifies the returned ID token.
+3. The server extracts `email`, `name`, `googleId` (`sub`), and `avatar` (`picture`) from the verified token payload.
+4. If a non-deleted user with that email already exists, the server links `googleId` and `avatar` if they are not already set.
+5. If no user exists, the server creates one with a `null` password.
+6. A signed JWT is returned.
+
+## Request body
+
+<ParamField body="code" type="string" required>
+  The OAuth 2.0 authorization code returned by Google after the user grants consent.
+</ParamField>
+
+## Response
+
+**200 OK**
+
+<ResponseField name="user" type="object" required>
+  <Expandable title="properties">
+    <ResponseField name="id" type="number" required>
+      Auto-incrementing integer primary key.
+    </ResponseField>
+    <ResponseField name="name" type="string" required>
+      User's display name from the Google account.
+    </ResponseField>
+    <ResponseField name="email" type="string" required>
+      User's email address from the Google account.
+    </ResponseField>
+    <ResponseField name="role" type="string" required>
+      User role. One of `admin` or `user`. Defaults to `user` for new accounts.
+    </ResponseField>
+    <ResponseField name="avatar" type="string">
+      URL of the user's Google profile picture.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="token" type="string" required>
+  Signed JWT. Include this as `Authorization: Bearer <token>` on subsequent requests. Expires after 7 days.
+</ResponseField>
+
+## Error responses
+
+| Status | Error | Cause |
+|--------|-------|-------|
+| `400` | `Authorization code is missing` | `code` field was not included in the request body |
+| `400` | `Invalid Google Token` | Google returned an empty payload after token verification |
+| `500` | `Google authentication failed` | Unexpected server error or Google API failure |
+
+## Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/api/auth/google \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "code": "4/0AfJohXm..."
+  }'
+```
+
+</CodeGroup>
+
+```json Response
+{
+  "user": {
+    "id": 2,
+    "name": "Yeeshu",
+    "email": "yeeshu@gmail.com",
+    "role": "user",
+    "avatar": "https://lh3.googleusercontent.com/a/..."
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```

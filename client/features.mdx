@@ -1,0 +1,166 @@
+---
+title: Client features
+description: An overview of the pages, authentication flow, routing, and API calls in the StatHub React client.
+---
+
+The StatHub client is a single-page application built with React 19 and React Router v7. All pages are rendered inside a shared layout and the navigation state is managed by a global authentication context.
+
+## Routing
+
+Routes are defined in `src/App.jsx` using React Router `<Routes>`. Every route is nested under `MainLayout`, which renders the fixed header and bottom navigation bar around the page content.
+
+```jsx
+<AuthProvider>
+  <BrowserRouter>
+    <Routes>
+      <Route path="/" element={<MainLayout />}>
+        <Route index element={<Home />} />
+        <Route path="quickview" element={<QuickView />} />
+        <Route path="create" element={<Create />} />
+        <Route path="profile" element={<Profile />} />
+        <Route path="login" element={<GoogleOAuthProvider ...><Login /></GoogleOAuthProvider>} />
+        <Route path="signup" element={<GoogleOAuthProvider ...><Signup /></GoogleOAuthProvider>} />
+        <Route path="forgot-password" element={<ForgotPassword />} />
+        <Route path="reset-password" element={<ResetPassword />} />
+        <Route path="*" element={<ErrorPage />} />
+      </Route>
+    </Routes>
+  </BrowserRouter>
+</AuthProvider>
+```
+
+`GoogleOAuthProvider` wraps only the login and signup routes, scoping the Google OAuth context to the pages that need it.
+
+## Layout
+
+Every page is wrapped by `MainLayout` (`src/layouts/MainLayout.jsx`), which provides:
+
+- **Header** — fixed to the top of the viewport; shows the "StatHub" wordmark, a theme toggle, and a search button.
+- **Main content area** — a centred container with top and bottom padding (64 px each) so content is never hidden behind the fixed header or menu bar.
+- **MenuBar** — fixed to the bottom of the viewport; contains four navigation links.
+
+### Bottom navigation
+
+The `MenuBar` component (`src/components/MenuBar.jsx`) renders four links:
+
+| Label | Route |
+|---|---|
+| Home | `/` |
+| Quick View | `/quickview` |
+| Host | `/create` |
+| Profile | `/profile` |
+
+The active link is highlighted with a gradient using the sport-specific accent colour defined in `index.css`.
+
+## Pages
+
+<CardGroup cols={2}>
+  <Card title="Home" icon="house">
+    The landing page at `/`. Intended to list matches and surface their current status (scheduled, live, or finished).
+  </Card>
+  <Card title="Quick View" icon="bolt">
+    Located at `/quickview`. A detailed view for a single match, designed to display a live commentary stream.
+  </Card>
+  <Card title="Host" icon="circle-plus">
+    Located at `/create`. A form page for creating a new match.
+  </Card>
+  <Card title="Profile" icon="user">
+    Located at `/profile`. Displays the authenticated user's name, email, account status, and role. Shows login/signup prompts if the user is not authenticated.
+  </Card>
+</CardGroup>
+
+### Authentication pages
+
+All authentication pages use `AuthLayout` (`src/layouts/AuthLayout.jsx`), a two-column layout with a decorative graphic panel on the left (desktop) and the form on the right.
+
+<CardGroup cols={2}>
+  <Card title="Login" icon="key">
+    `/login` — email/password form plus a "Continue with Google" button.
+  </Card>
+  <Card title="Signup" icon="user-plus">
+    `/signup` — name, email, and password fields plus a "Continue with Google" button.
+  </Card>
+  <Card title="Forgot password" icon="lock-open">
+    `/forgot-password` — submits an email address to request a reset link.
+  </Card>
+  <Card title="Reset password" icon="lock">
+    `/reset-password?token=...` — reads the `token` query parameter and lets the user set a new password.
+  </Card>
+</CardGroup>
+
+## Authentication
+
+### Auth context
+
+Authentication state is managed by `AuthContext` (`src/context/AuthContext.jsx`). It wraps the entire application via `AuthProvider` and exposes the following values to any component that calls `useAuth()`:
+
+| Value | Type | Description |
+|---|---|---|
+| `user` | object \| null | The currently authenticated user object, or `null` if not logged in |
+| `isLoading` | boolean | `true` while the context is reading persisted state from `localStorage` on first mount |
+| `login(userData, token)` | function | Persists the user and JWT token to `localStorage` and updates state |
+| `logout()` | function | Removes the user and token from `localStorage` and clears state |
+| `getToken()` | function | Returns the raw JWT string from `localStorage` |
+| `initAuth()` | function | Re-reads `localStorage` to restore auth state (called automatically on mount) |
+
+On mount, `AuthProvider` calls `initAuth()`, which reads `token` and `user` from `localStorage`. If both are present, the user object is restored from the stored JSON; otherwise the user is set to `null`.
+
+```jsx
+const token = localStorage.getItem("token");
+const storedUser = localStorage.getItem("user");
+
+if (token && storedUser) {
+  setUser(JSON.parse(storedUser));
+}
+```
+
+### Google OAuth
+
+Google OAuth uses the [authorization code flow](https://developers.google.com/identity/protocols/oauth2/web-server). When the user clicks "Continue with Google", the `@react-oauth/google` library obtains an authorization code, which is then sent to the StatHub server for verification:
+
+```jsx
+const googleLogin = useGoogleLogin({
+  flow: "auth-code",
+  onSuccess: async (codeResponse) => {
+    const data = await googleAuthUser(codeResponse.code);
+    if (data.token && data.user) {
+      login(data.user, data.token);
+      navigate("/");
+    }
+  },
+});
+```
+
+The server exchanges the code for Google tokens and returns a StatHub JWT in the response. The same `googleAuthUser` function is used on both the login and signup pages.
+
+<Note>
+  `GoogleOAuthProvider` is initialized with `VITE_GOOGLE_CLIENT_ID` from the environment. The provider is scoped to the `/login` and `/signup` routes only.
+</Note>
+
+## API calls
+
+All API calls are defined in `src/api/auth.js` and use a shared Axios instance with `VITE_API_BASE_URL` as the base URL.
+
+| Function | Method | Endpoint | Description |
+|---|---|---|---|
+| `loginUser(credentials)` | `POST` | `/api/auth/login` | Authenticates a user with email and password. Returns `{ token, user }`. |
+| `signupUser(userData)` | `POST` | `/api/auth/signup` | Registers a new user with name, email, and password. Returns `{ token, user }` if the server issues a token immediately. |
+| `googleAuthUser(code)` | `POST` | `/api/auth/google` | Exchanges a Google authorization code for a StatHub JWT. Returns `{ token, user }`. |
+| `forgotPasswordUser(email)` | `POST` | `/api/auth/forgot-password` | Requests a password reset email for the given address. |
+| `resetPasswordUser(token, newPassword)` | `POST` | `/api/auth/reset-password` | Resets the password using the token from the reset email link. |
+
+Errors returned by the server (`error.response.data.message` or `error.response.data.error`) are surfaced directly to the user inside each form.
+
+## Theming
+
+The app supports light and dark modes via a `ThemeToggle` button in the header. The toggle adds or removes the `dark` class on `<html>` and persists the preference to `localStorage.theme`.
+
+Colours are defined as CSS custom properties in `src/index.css` using the OKLCH colour space. A sport-specific accent colour can be applied by setting a `data-sport` attribute on any container:
+
+| Value | Accent |
+|---|---|
+| `cricket` | Green |
+| `basketball` | Orange |
+| `football` | Purple/blue |
+
+The default accent (when no `data-sport` attribute is set) is blue.

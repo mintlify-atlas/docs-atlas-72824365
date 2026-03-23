@@ -1,0 +1,190 @@
+---
+title: Authentication
+description: JWT-based authentication, email/password signup and login, Google OAuth, and password reset flows in StatHub.
+---
+
+StatHub supports two authentication methods: email/password and Google OAuth. Both produce a signed JWT that the client includes in subsequent requests. Passwords are hashed with bcrypt before storage and are never returned in API responses.
+
+## JWT tokens
+
+Tokens are generated with the `jsonwebtoken` library. Every token carries the user's `id` and `role` and expires after 7 days:
+
+```js
+const JWT_EXPIRES_IN = "7d";
+
+export function generateToken(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+```
+
+Clients include the token in the `Authorization` header as a Bearer token:
+
+```
+Authorization: Bearer <token>
+```
+
+The `authenticate` middleware in `src/middlewares/authMiddleware.js` verifies this header on protected routes:
+
+```js
+export function authenticate(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = verifyToken(token);
+    req.user = decoded;
+    next();
+  } catch (_err) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+```
+
+A successful decode sets `req.user` to the token payload (`{ id, role }`) for use in downstream handlers.
+
+## Email/password signup
+
+<Steps>
+  <Step title="Validate the request body">
+    The `signupSchema` (Zod) validates `name`, `email`, and `password`. Invalid payloads return `400`.
+  </Step>
+  <Step title="Check for duplicate email">
+    A `SELECT` query checks whether the email is already registered. If found, the server returns `409 Conflict`.
+  </Step>
+  <Step title="Hash the password">
+    The password is hashed with bcrypt at `SALT_ROUNDS = 12`:
+
+    ```js
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+    ```
+  </Step>
+  <Step title="Insert the user and return a token">
+    The new user row is inserted with `role` defaulting to `"user"`. A JWT is generated from the inserted row's `id` and `role` and returned alongside the user object.
+
+    ```json
+    {
+      "user": { "id": 1, "name": "Alice", "email": "alice@example.com", "role": "user" },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+    ```
+  </Step>
+</Steps>
+
+## Email/password login
+
+<Steps>
+  <Step title="Validate the request body">
+    The `loginSchema` (Zod) validates `email` and `password`. Invalid payloads return `400`.
+  </Step>
+  <Step title="Look up the user">
+    The server queries for a user where `email` matches and `isDeleted = false`. If no user is found, `401 Invalid credentials` is returned.
+  </Step>
+  <Step title="Check for password existence">
+    If the user was created via Google OAuth, their `password` field is `null`. Attempting to log in with a password returns a `400` error prompting the user to log in with Google or reset their password.
+  </Step>
+  <Step title="Compare the password">
+    `bcrypt.compare` checks the plaintext password against the stored hash. A mismatch returns `401 Invalid credentials`.
+  </Step>
+  <Step title="Return a token">
+    A JWT is generated and returned with the user object.
+  </Step>
+</Steps>
+
+## Google OAuth
+
+<Steps>
+  <Step title="Client sends the authorization code">
+    The React client handles the OAuth popup and sends the authorization code to `POST /api/auth/google`:
+
+    ```json
+    { "code": "4/0AX4XfWh..." }
+    ```
+  </Step>
+  <Step title="Exchange code for tokens">
+    The server creates an `OAuth2Client` with `redirectUri: "postmessage"` (for popup-based flows) and exchanges the code for Google tokens:
+
+    ```js
+    const client = new OAuth2Client(
+      CONFIG.GOOGLE_CLIENT_ID,
+      CONFIG.GOOGLE_CLIENT_SECRET,
+      "postmessage",
+    );
+    const { tokens } = await client.getToken(code);
+    ```
+  </Step>
+  <Step title="Verify the ID token">
+    The ID token is verified against the Google public keys. The payload provides `sub` (Google ID), `email`, `name`, and `picture`.
+  </Step>
+  <Step title="Look up or create the user">
+    The server checks whether a non-deleted user with that email exists:
+
+    - **Existing user** — if `googleId` or `avatar` is missing, those fields are linked to the Google account.
+    - **New user** — a row is inserted with `password: null`. Google OAuth users cannot log in with a password until they initiate a password reset.
+  </Step>
+  <Step title="Return a token">
+    A JWT is generated from the user's `id` and `role` and returned with the user object (including `avatar`).
+  </Step>
+</Steps>
+
+## Password reset
+
+<Steps>
+  <Step title="Request a reset link">
+    `POST /api/auth/forgot-password` accepts `{ email }`. To prevent user enumeration, the endpoint always returns `200` regardless of whether the email exists.
+
+    If the user exists, a UUID token is generated and stored in the user's `metadata` JSONB field along with a 1-hour expiry:
+
+    ```js
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    const updatedMetadata = {
+      ...user.metadata,
+      resetPasswordToken: token,
+      resetPasswordExpires: expiresAt.toISOString(),
+    };
+    ```
+  </Step>
+  <Step title="Email delivery">
+    The reset link is sent via the [Resend](https://resend.com) API from `auth@stathub.yeeshu.dev`. The link points to `CLIENT_PASSWORD_RESET_URL` with the token as a query parameter.
+  </Step>
+  <Step title="Submit a new password">
+    `POST /api/auth/reset-password` accepts `{ token, newPassword }`. The server queries for a user where `metadata->>'resetPasswordToken' = token` using a raw SQL expression through Drizzle:
+
+    ```js
+    .where(sql`${users.metadata}->>'resetPasswordToken' = ${token}`)
+    ```
+  </Step>
+  <Step title="Validate the token expiry">
+    If `resetPasswordExpires` is in the past, the server returns `400 Token has expired`.
+  </Step>
+  <Step title="Update the password">
+    The new password is hashed with bcrypt at `SALT_ROUNDS = 12`. The `resetPasswordToken` and `resetPasswordExpires` keys are deleted from `metadata` before saving.
+  </Step>
+</Steps>
+
+## User roles
+
+The `userRoleEnum` PostgreSQL enum defines two roles:
+
+| Role | Description |
+|---|---|
+| `user` | Default role assigned to all new signups |
+| `admin` | Elevated role for privileged operations |
+
+The role is embedded in the JWT payload so route handlers can read it from `req.user.role` without an additional database query.
+
+## Soft delete
+
+Users are never hard-deleted. The `isDeleted` boolean column (default `false`) is used to exclude users from lookups:
+
+```js
+.where(and(eq(users.email, email), eq(users.isDeleted, false)))
+```
+
+Setting `isDeleted = true` effectively deactivates the account while preserving the row and all related data.

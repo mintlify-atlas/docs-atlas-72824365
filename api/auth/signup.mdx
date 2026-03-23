@@ -1,0 +1,84 @@
+---
+title: Sign up
+description: Register a new user account with a name, email address, and password.
+---
+
+`POST /api/auth/signup`
+
+Creates a new user record, hashes the password with bcrypt (12 salt rounds), and returns a signed JWT.
+
+## Request body
+
+<ParamField body="name" type="string" required>
+  Display name for the user. Must be between 2 and 100 characters.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Email address. Must be a valid email format. Must be unique across all users.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. Must be between 8 and 15 characters. Stored as a bcrypt hash.
+</ParamField>
+
+## Response
+
+**201 Created**
+
+<ResponseField name="user" type="object" required>
+  <Expandable title="properties">
+    <ResponseField name="id" type="number" required>
+      Auto-incrementing integer primary key.
+    </ResponseField>
+    <ResponseField name="name" type="string" required>
+      Display name provided at registration.
+    </ResponseField>
+    <ResponseField name="email" type="string" required>
+      Email address provided at registration.
+    </ResponseField>
+    <ResponseField name="role" type="string" required>
+      User role. One of `admin` or `user`. Defaults to `user`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="token" type="string" required>
+  Signed JWT. Include this as `Authorization: Bearer <token>` on subsequent requests. Expires after 7 days.
+</ResponseField>
+
+## Error responses
+
+| Status | Error | Cause |
+|--------|-------|-------|
+| `400` | Zod issues array | `name`, `email`, or `password` failed validation |
+| `409` | `Email already registered` | Another account uses the same email address |
+| `500` | `Something went wrong` | Unexpected server error |
+
+## Example
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url http://localhost:8000/api/auth/signup \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name": "Yeeshu",
+    "email": "yeeshu@example.com",
+    "password": "Pass1234"
+  }'
+```
+
+</CodeGroup>
+
+```json Response
+{
+  "user": {
+    "id": 1,
+    "name": "Yeeshu",
+    "email": "yeeshu@example.com",
+    "role": "user"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```

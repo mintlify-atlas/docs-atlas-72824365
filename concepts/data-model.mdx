@@ -1,0 +1,221 @@
+---
+title: Data model
+description: Schema reference for the users, matches, and commentary tables, including enums, relations, and the match status utility.
+---
+
+StatHub uses three PostgreSQL tables managed through [Drizzle ORM](https://orm.drizzle.team). The schema is defined in `src/db/schema.js` using Drizzle's `pg-core` helpers.
+
+## Enums
+
+### `match_status`
+
+```js
+export const matchStatusEnum = pgEnum("match_status", ["scheduled", "live", "finished"]);
+```
+
+| Value | Description |
+|---|---|
+| `scheduled` | Match has not yet started (start time is in the future) |
+| `live` | Match is currently in progress |
+| `finished` | Match has ended (end time is in the past) |
+
+### `user_role`
+
+```js
+export const userRoleEnum = pgEnum("user_role", ["admin", "user"]);
+```
+
+| Value | Description |
+|---|---|
+| `admin` | Privileged administrator account |
+| `user` | Standard user account (default) |
+
+## Tables
+
+### `users`
+
+Stores all registered users, regardless of whether they signed up with email/password or Google OAuth.
+
+```js
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  password: text("password"),           // null for Google OAuth users
+  googleId: text("google_id").unique(),
+  avatar: text("avatar"),
+  metadata: jsonb("metadata").default({}),
+  role: userRoleEnum("role").default("user").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  isDeleted: boolean("is_deleted").default(false).notNull(),
+});
+```
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `serial` | Primary key | Auto-incrementing integer ID |
+| `name` | `text` | Not null | Display name |
+| `email` | `text` | Not null, unique | Login email address |
+| `password` | `text` | Nullable | bcrypt hash; `null` for Google OAuth users |
+| `google_id` | `text` | Unique, nullable | Google account subject identifier |
+| `avatar` | `text` | Nullable | Profile picture URL from Google |
+| `metadata` | `jsonb` | Default `{}` | Flexible field; holds password reset token and expiry during a reset flow |
+| `role` | `user_role` | Not null, default `user` | User role enum |
+| `created_at` | `timestamp` | Not null, default now | Row creation time |
+| `updated_at` | `timestamp` | Not null, default now | Last update time |
+| `is_deleted` | `boolean` | Not null, default `false` | Soft-delete flag; deleted users are excluded from queries |
+
+<Note>
+  The `metadata` column is used during the password reset flow to store `resetPasswordToken` (a UUID) and `resetPasswordExpires` (an ISO 8601 timestamp). Both keys are deleted from `metadata` once the reset is complete.
+</Note>
+
+### `matches`
+
+Represents a sports match between two teams.
+
+```js
+export const matches = pgTable("matches", {
+  id: serial("id").primaryKey(),
+  sport: text("sport").notNull(),
+  homeTeam: text("home_team").notNull(),
+  awayTeam: text("away_team").notNull(),
+  status: matchStatusEnum("status").default("scheduled").notNull(),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time"),
+  homeScore: integer("home_score").default(0).notNull(),
+  awayScore: integer("away_score").default(0).notNull(),
+  hostId: integer("host_id")
+    .references(() => users.id, { onDelete: "restrict" })
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+```
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `serial` | Primary key | Auto-incrementing integer ID |
+| `sport` | `text` | Not null | Sport type (e.g., `"football"`, `"basketball"`) |
+| `home_team` | `text` | Not null | Name of the home team |
+| `away_team` | `text` | Not null | Name of the away team |
+| `status` | `match_status` | Not null, default `scheduled` | Current match status; computed by `getMatchStatus` at creation |
+| `start_time` | `timestamp` | Not null | Scheduled start time |
+| `end_time` | `timestamp` | Nullable | Scheduled end time |
+| `home_score` | `integer` | Not null, default `0` | Current score for the home team |
+| `away_score` | `integer` | Not null, default `0` | Current score for the away team |
+| `host_id` | `integer` | Not null, FK → `users.id` (restrict) | User who created the match |
+| `created_at` | `timestamp` | Not null, default now | Row creation time |
+
+### `commentary`
+
+Stores individual commentary entries for a match. Each entry describes a discrete in-game event.
+
+```js
+export const commentaries = pgTable("commentary", {
+  id: serial("id").primaryKey(),
+  matchId: integer("match_id")
+    .references(() => matches.id)
+    .notNull(),
+  minute: integer("minute"),
+  sequence: integer("sequence").notNull(),
+  period: text("period"),
+  eventType: text("event_type").notNull(),
+  actor: text("actor"),
+  team: text("team"),
+  message: text("message").notNull(),
+  metadata: jsonb("metadata"),
+  tags: text("tags").array(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+```
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `serial` | Primary key | Auto-incrementing integer ID |
+| `match_id` | `integer` | Not null, FK → `matches.id` | The match this entry belongs to |
+| `minute` | `integer` | Nullable | Match minute when the event occurred |
+| `sequence` | `integer` | Not null | Ordering index within the match |
+| `period` | `text` | Nullable | Match period label (e.g., `"1st Half"`, `"Overtime"`) |
+| `event_type` | `text` | Not null | Type of event (e.g., `"goal"`, `"foul"`, `"substitution"`) |
+| `actor` | `text` | Nullable | Player or participant involved in the event |
+| `team` | `text` | Nullable | `"home"`, `"away"`, or `null` if not team-specific |
+| `message` | `text` | Not null | Human-readable commentary text |
+| `metadata` | `jsonb` | Nullable | Flexible field for additional event data |
+| `tags` | `text[]` | Nullable | Array of string tags for filtering |
+| `created_at` | `timestamp` | Not null, default now | Row creation time |
+
+## Relations
+
+Drizzle relations are declared separately from the table definitions and are used for typed query building:
+
+```js
+// One user → many matches
+export const usersRelations = relations(users, ({ many }) => ({
+  matches: many(matches),
+}));
+
+// One match → many commentaries, one match → one host user
+export const matchesRelations = relations(matches, ({ one, many }) => ({
+  commentaries: many(commentaries),
+  host: one(users, {
+    fields: [matches.hostId],
+    references: [users.id],
+  }),
+}));
+
+// One commentary entry → one match
+export const commentariesRelations = relations(commentaries, ({ one }) => ({
+  match: one(matches, {
+    fields: [commentaries.matchId],
+    references: [matches.id],
+  }),
+}));
+```
+
+<CardGroup cols={3}>
+  <Card title="users" icon="user">
+    Has many **matches** (as host)
+  </Card>
+  <Card title="matches" icon="trophy">
+    Belongs to one **user** (host). Has many **commentaries**.
+  </Card>
+  <Card title="commentary" icon="microphone">
+    Belongs to one **match**
+  </Card>
+</CardGroup>
+
+## `getMatchStatus` utility
+
+When a match is created via `POST /matches`, its `status` is computed automatically rather than being supplied by the caller. The `getMatchStatus` function in `src/utils/match-status.js` compares `startTime` and `endTime` against the current time:
+
+```js
+export function getMatchStatus(startTime, endTime, now = new Date()) {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
+  if (now < start) {
+    return MATCH_STATUS.SCHEDULED;  // "scheduled"
+  }
+
+  if (now >= end) {
+    return MATCH_STATUS.FINISHED;   // "finished"
+  }
+
+  return MATCH_STATUS.LIVE;         // "live"
+}
+```
+
+| Condition | Returned status |
+|---|---|
+| `now < startTime` | `scheduled` |
+| `startTime <= now < endTime` | `live` |
+| `now >= endTime` | `finished` |
+| Invalid date input | `null` |
+
+<Tip>
+  `getMatchStatus` accepts an optional `now` parameter, making it straightforward to test all three status transitions without manipulating the system clock.
+</Tip>

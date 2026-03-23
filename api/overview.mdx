@@ -1,0 +1,94 @@
+---
+title: API overview
+description: Base URLs, authentication, available endpoints, error format, rate limiting, and the WebSocket connection for StatHub.
+---
+
+The StatHub API is an HTTP + WebSocket API served by the Express 5 server. All HTTP endpoints accept and return JSON.
+
+## Base URL
+
+```
+http://localhost:8000
+```
+
+Replace `localhost:8000` with your deployed host when running in production.
+
+## Authentication
+
+Protected endpoints require a JWT bearer token in the `Authorization` header.
+
+```http
+Authorization: Bearer <token>
+```
+
+Obtain a token by calling [POST /api/auth/signup](/api/auth/signup), [POST /api/auth/login](/api/auth/login), or [POST /api/auth/google](/api/auth/google). Tokens are signed with HS256 and expire after **7 days**.
+
+If the token is missing or invalid the server responds with `401 Unauthorized`.
+
+## Content type
+
+All requests that include a body must send `Content-Type: application/json`.
+
+## Error format
+
+Every error response follows this shape:
+
+```json
+{ "error": "Human-readable message" }
+```
+
+Validation errors from Zod return the Zod issues array instead of a string:
+
+```json
+{ "error": [ { "code": "too_small", "path": ["password"], "message": "password must be at least 8 characters" } ] }
+```
+
+## Rate limiting
+
+All HTTP routes pass through Arcjet middleware with a **sliding window** rule: **50 requests per 10 seconds per IP address**. Requests that exceed this limit receive `429 Too Many Requests`.
+
+The WebSocket endpoint uses a separate sliding window: **5 messages per 2 seconds per IP**.
+
+<Warning>
+  Arcjet also applies bot-detection and shield rules. Automated clients that are not search engines or link-preview bots may be blocked with `403 Forbidden`.
+</Warning>
+
+## WebSocket endpoint
+
+```
+ws://localhost:8000/ws
+```
+
+Connect to receive real-time `match_created` and commentary events. See [WebSocket overview](/api/websocket/overview) for the full event reference.
+
+## Available endpoints
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/auth/signup">
+    Sign up, log in, Google OAuth, and password reset.
+  </Card>
+  <Card title="Matches" icon="trophy" href="/api/matches/list">
+    List and create sports matches.
+  </Card>
+  <Card title="Commentary" icon="microphone" href="/api/commentary/list">
+    List and post per-match commentary events.
+  </Card>
+  <Card title="WebSocket" icon="bolt" href="/api/websocket/overview">
+    Real-time event stream for matches and commentary.
+  </Card>
+</CardGroup>
+
+### Full endpoint list
+
+| Method | Path | Description | Auth required |
+|--------|------|-------------|---------------|
+| `GET` | `/matches` | List all matches | No |
+| `POST` | `/matches` | Create a match | Yes |
+| `GET` | `/matches/:id/commentary` | List commentary for a match | No |
+| `POST` | `/matches/:id/commentary` | Post a commentary entry | Yes |
+| `POST` | `/api/auth/signup` | Register a new user | No |
+| `POST` | `/api/auth/login` | Log in with email and password | No |
+| `POST` | `/api/auth/google` | Authenticate via Google OAuth | No |
+| `POST` | `/api/auth/forgot-password` | Request a password reset email | No |
+| `POST` | `/api/auth/reset-password` | Reset password with token | No |
+| `WS` | `/ws` | WebSocket connection | No |

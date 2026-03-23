@@ -1,80 +1,155 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Run StatHub locally in a few minutes by setting up the server and client side by side.
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+- **Node.js** v18 or later
+- **pnpm** — install with `npm install -g pnpm`
+- **PostgreSQL** database (local or remote)
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone <your-repo-url>
+    cd stathub
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Install server dependencies">
+    ```bash
+    cd server
+    pnpm install
+    ```
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Configure server environment variables">
+    Create a `.env` file inside the `server/` directory. Use `.env.example` as the template:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```env
+    PORT=8000
+    HOST=0.0.0.0
+    DATABASE_URL=postgres://user:password@localhost:5432/stathub
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    # Arcjet
+    ARCJET_KEY=
+    ARCJET_ENV=development
+    ARCJET_MODE=
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    # Auth
+    JWT_SECRET=
+    GOOGLE_CLIENT_ID=
+    GOOGLE_CLIENT_SECRET=
 
-### Step 3: Go live
+    # Email
+    RESEND_API_KEY=
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    # Client
+    CLIENT_URL=http://localhost:5173
+    CLIENT_PASSWORD_RESET_URL=http://localhost:5173/reset-password
+    ```
 
-## Next steps
+    | Variable | Description |
+    |---|---|
+    | `PORT` | Port the server listens on. Defaults to `8000`. |
+    | `HOST` | Bind address. Defaults to `0.0.0.0`. |
+    | `DATABASE_URL` | PostgreSQL connection string. |
+    | `ARCJET_KEY` | Arcjet API key from your Arcjet dashboard. |
+    | `ARCJET_ENV` | Set to `development` locally. |
+    | `JWT_SECRET` | Secret used to sign JWTs. Use a long random string. |
+    | `GOOGLE_CLIENT_ID` | OAuth 2.0 client ID from Google Cloud Console. |
+    | `GOOGLE_CLIENT_SECRET` | OAuth 2.0 client secret from Google Cloud Console. |
+    | `RESEND_API_KEY` | API key for sending transactional email via Resend. |
+    | `CLIENT_URL` | Origin of the client app, used for CORS. |
+    | `CLIENT_PASSWORD_RESET_URL` | Full URL to the client password-reset page. |
+  </Step>
 
-Now that you have your docs running, explore these key features:
+  <Step title="Run database migrations">
+    Generate and apply the Drizzle schema to your PostgreSQL database:
 
-<CardGroup cols={2}>
+    ```bash
+    pnpm db:generate
+    pnpm db:migrate
+    ```
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    <Tip>
+      Run `pnpm db:studio` to open Drizzle Studio and inspect your database in the browser.
+    </Tip>
+  </Step>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+  <Step title="Start the server">
+    ```bash
+    pnpm dev
+    ```
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+    The server starts with Node's built-in `--watch` flag so it restarts automatically on file changes.
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+    You should see:
 
-</CardGroup>
+    ```
+    Server is running at http://localhost:8000
+    WebSocket server is running at ws://localhost:8000/ws
+    ```
+  </Step>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+  <Step title="Install client dependencies">
+    Open a new terminal from the repo root:
+
+    ```bash
+    cd client
+    pnpm install
+    ```
+  </Step>
+
+  <Step title="Configure client environment variables">
+    Create a `.env` file inside the `client/` directory:
+
+    ```env
+    VITE_API_BASE_URL=http://localhost:8000
+    VITE_GOOGLE_CLIENT_ID=
+    ```
+
+    | Variable | Description |
+    |---|---|
+    | `VITE_API_BASE_URL` | Base URL of the StatHub API server. |
+    | `VITE_GOOGLE_CLIENT_ID` | Same Google OAuth client ID used by the server. |
+  </Step>
+
+  <Step title="Start the client">
+    ```bash
+    pnpm dev
+    ```
+
+    Vite starts the development server. Open [http://localhost:5173](http://localhost:5173) in your browser.
+  </Step>
+
+  <Step title="Verify the setup">
+    Check the health endpoint:
+
+    ```bash
+    curl http://localhost:8000/
+    # Server is up and running!
+    ```
+
+    Test the WebSocket endpoint by connecting to `ws://localhost:8000/ws`. Any client that connects will receive `match_created` and commentary events as they are broadcast by the server.
+  </Step>
+</Steps>
+
+## Available server scripts
+
+| Script | Command | Description |
+|---|---|---|
+| Start (production) | `pnpm start` | Runs `node src/index.js` directly. |
+| Start (development) | `pnpm dev` | Runs with `--watch` for auto-restart. |
+| Generate migrations | `pnpm db:generate` | Generates SQL migration files from the Drizzle schema. |
+| Apply migrations | `pnpm db:migrate` | Applies pending migrations to the database. |
+| Open DB studio | `pnpm db:studio` | Launches Drizzle Studio in the browser. |
+
+## Available client scripts
+
+| Script | Command | Description |
+|---|---|---|
+| Development | `pnpm dev` | Starts the Vite dev server with HMR. |
+| Build | `pnpm build` | Produces an optimized production build in `dist/`. |
+| Preview | `pnpm preview` | Serves the production build locally for testing. |

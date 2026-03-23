@@ -1,0 +1,372 @@
+---
+title: WebSocket events
+description: Reference for every message sent between the client and the StatHub WebSocket server.
+---
+
+All messages are JSON text frames. Each message has a `type` field that identifies the event.
+
+<CardGroup cols={2}>
+  <Card title="Client → server" icon="arrow-up">
+    `subscribe`, `unsubscribe`
+  </Card>
+  <Card title="Server → client" icon="arrow-down">
+    `welcome`, `subscribed`, `unsubscribed`, `match_created`, `commentary`, `error`
+  </Card>
+</CardGroup>
+
+<Tabs>
+  <Tab title="Client → server">
+
+    ## subscribe
+
+    Subscribe to real-time events for a specific match. After subscribing, the client receives all `commentary` events for that match.
+
+    **Direction:** client → server
+
+    ```json
+    { "type": "subscribe", "matchId": 42 }
+    ```
+
+    <ResponseField name="type" type="string" required>
+      Must be `"subscribe"`.
+    </ResponseField>
+
+    <ResponseField name="matchId" type="integer" required>
+      The ID of the match to subscribe to. Must be an integer. Non-integer values are silently ignored.
+    </ResponseField>
+
+    The server responds with a `subscribed` confirmation:
+
+    ```json
+    { "type": "subscribed", "matchId": 42 }
+    ```
+
+    **Example:**
+
+    ```javascript
+    ws.send(JSON.stringify({ type: 'subscribe', matchId: 42 }));
+    ```
+
+    ---
+
+    ## unsubscribe
+
+    Unsubscribe from events for a specific match. The client stops receiving `commentary` events for that match.
+
+    **Direction:** client → server
+
+    ```json
+    { "type": "unsubscribe", "matchId": 42 }
+    ```
+
+    <ResponseField name="type" type="string" required>
+      Must be `"unsubscribe"`.
+    </ResponseField>
+
+    <ResponseField name="matchId" type="integer" required>
+      The ID of the match to unsubscribe from. Must be an integer.
+    </ResponseField>
+
+    The server responds with an `unsubscribed` confirmation:
+
+    ```json
+    { "type": "unsubscribed", "matchId": 42 }
+    ```
+
+    **Example:**
+
+    ```javascript
+    ws.send(JSON.stringify({ type: 'unsubscribe', matchId: 42 }));
+    ```
+
+    <Note>
+      All subscriptions are cleaned up automatically when the connection closes. You do not need to unsubscribe manually before disconnecting.
+    </Note>
+
+  </Tab>
+  <Tab title="Server → client">
+
+    ## welcome
+
+    Sent immediately when a new WebSocket connection is established, before the client sends any messages.
+
+    **Direction:** server → client  
+    **Trigger:** new connection accepted
+
+    ```json
+    { "type": "welcome" }
+    ```
+
+    **Example handler:**
+
+    ```javascript
+    ws.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'welcome') {
+        // Safe to send subscribe messages now
+        ws.send(JSON.stringify({ type: 'subscribe', matchId: 42 }));
+      }
+    });
+    ```
+
+    ---
+
+    ## subscribed
+
+    Sent in response to a successful `subscribe` message.
+
+    **Direction:** server → client  
+    **Trigger:** client sends a valid `subscribe` message
+
+    ```json
+    { "type": "subscribed", "matchId": 42 }
+    ```
+
+    <ResponseField name="type" type="string">
+      Always `"subscribed"`.
+    </ResponseField>
+
+    <ResponseField name="matchId" type="integer">
+      The match ID that was subscribed to, echoed from the client request.
+    </ResponseField>
+
+    ---
+
+    ## unsubscribed
+
+    Sent in response to a successful `unsubscribe` message.
+
+    **Direction:** server → client  
+    **Trigger:** client sends a valid `unsubscribe` message
+
+    ```json
+    { "type": "unsubscribed", "matchId": 42 }
+    ```
+
+    <ResponseField name="type" type="string">
+      Always `"unsubscribed"`.
+    </ResponseField>
+
+    <ResponseField name="matchId" type="integer">
+      The match ID that was unsubscribed from, echoed from the client request.
+    </ResponseField>
+
+    ---
+
+    ## match_created
+
+    Broadcast to **all** connected clients when a new match is created via `POST /matches`.
+
+    **Direction:** server → client  
+    **Trigger:** successful `POST /matches` request
+
+    ```json
+    {
+      "type": "match_created",
+      "data": {
+        "id": 4,
+        "sport": "football",
+        "homeTeam": "Team A",
+        "awayTeam": "Team B",
+        "status": "scheduled",
+        "startTime": "2024-06-01T15:00:00.000Z",
+        "endTime": "2024-06-01T17:00:00.000Z",
+        "homeScore": 0,
+        "awayScore": 0,
+        "hostId": 1,
+        "createdAt": "2024-05-31T10:00:00.000Z"
+      }
+    }
+    ```
+
+    <ResponseField name="type" type="string">
+      Always `"match_created"`.
+    </ResponseField>
+
+    <ResponseField name="data" type="object">
+      The newly created match record.
+
+      <Expandable title="Match object fields">
+        <ResponseField name="id" type="integer">
+          Unique match identifier.
+        </ResponseField>
+        <ResponseField name="sport" type="string">
+          Sport type (e.g., `"football"`, `"basketball"`).
+        </ResponseField>
+        <ResponseField name="homeTeam" type="string">
+          Name of the home team.
+        </ResponseField>
+        <ResponseField name="awayTeam" type="string">
+          Name of the away team.
+        </ResponseField>
+        <ResponseField name="status" type="string">
+          Computed match status. One of `"scheduled"`, `"live"`, or `"finished"`.
+        </ResponseField>
+        <ResponseField name="startTime" type="string">
+          ISO 8601 datetime when the match starts.
+        </ResponseField>
+        <ResponseField name="endTime" type="string | null">
+          ISO 8601 datetime when the match ends. May be `null`.
+        </ResponseField>
+        <ResponseField name="homeScore" type="integer">
+          Home team score. Defaults to `0`.
+        </ResponseField>
+        <ResponseField name="awayScore" type="integer">
+          Away team score. Defaults to `0`.
+        </ResponseField>
+        <ResponseField name="hostId" type="integer">
+          ID of the user who created the match.
+        </ResponseField>
+        <ResponseField name="createdAt" type="string">
+          ISO 8601 datetime when the record was created.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <Info>
+      You do not need to be subscribed to a match to receive `match_created` events. Every connected client receives them.
+    </Info>
+
+    **Example handler:**
+
+    ```javascript
+    ws.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'match_created') {
+        console.log('New match:', message.data.homeTeam, 'vs', message.data.awayTeam);
+      }
+    });
+    ```
+
+    ---
+
+    ## commentary
+
+    Sent **only** to clients subscribed to the specific match when a commentary entry is created via `POST /matches/:id/commentary`.
+
+    **Direction:** server → client  
+    **Trigger:** successful `POST /matches/:id/commentary` request; delivered only to subscribers of that match
+
+    ```json
+    {
+      "type": "commentary",
+      "data": {
+        "id": 17,
+        "matchId": 42,
+        "minute": 34,
+        "sequence": 5,
+        "period": "1st Half",
+        "eventType": "goal",
+        "actor": "John Smith",
+        "team": "home",
+        "message": "John Smith scores from the left flank!",
+        "metadata": { "assistedBy": "Jane Doe" },
+        "tags": ["goal", "scored"],
+        "createdAt": "2024-06-01T15:34:10.000Z"
+      }
+    }
+    ```
+
+    <ResponseField name="type" type="string">
+      Always `"commentary"`.
+    </ResponseField>
+
+    <ResponseField name="data" type="object">
+      The newly created commentary record.
+
+      <Expandable title="Commentary object fields">
+        <ResponseField name="id" type="integer">
+          Unique commentary entry identifier.
+        </ResponseField>
+        <ResponseField name="matchId" type="integer">
+          ID of the match this commentary belongs to.
+        </ResponseField>
+        <ResponseField name="minute" type="integer | null">
+          Match minute at which the event occurred. May be `null`.
+        </ResponseField>
+        <ResponseField name="sequence" type="integer">
+          Ordering sequence number within the match.
+        </ResponseField>
+        <ResponseField name="period" type="string | null">
+          Match period label (e.g., `"1st Half"`, `"Overtime"`). May be `null`.
+        </ResponseField>
+        <ResponseField name="eventType" type="string">
+          Type of event (e.g., `"goal"`, `"foul"`, `"substitution"`).
+        </ResponseField>
+        <ResponseField name="actor" type="string | null">
+          Name of the player or person involved. May be `null`.
+        </ResponseField>
+        <ResponseField name="team" type="string | null">
+          Which team the event belongs to. Typically `"home"`, `"away"`, or `null`.
+        </ResponseField>
+        <ResponseField name="message" type="string">
+          Human-readable description of the event.
+        </ResponseField>
+        <ResponseField name="metadata" type="object | null">
+          Flexible JSON object for additional event data. Shape varies by `eventType`. May be `null`.
+        </ResponseField>
+        <ResponseField name="tags" type="string[] | null">
+          Array of string tags for filtering. May be `null`.
+        </ResponseField>
+        <ResponseField name="createdAt" type="string">
+          ISO 8601 datetime when the record was created.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <Tip>
+      Subscribe to a match before it goes live so you do not miss early commentary events.
+    </Tip>
+
+    **Example handler:**
+
+    ```javascript
+    ws.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'commentary') {
+        const { minute, eventType, actor, message: text } = message.data;
+        console.log(`[${minute}'] ${eventType} — ${actor}: ${text}`);
+      }
+    });
+    ```
+
+    ---
+
+    ## error
+
+    Sent when the server cannot parse a client message as JSON.
+
+    **Direction:** server → client  
+    **Trigger:** client sends a message that is not valid JSON
+
+    ```json
+    { "type": "error", "message": "Invalid JSON" }
+    ```
+
+    <ResponseField name="type" type="string">
+      Always `"error"`.
+    </ResponseField>
+
+    <ResponseField name="message" type="string">
+      Error description. Always `"Invalid JSON"` for parse failures.
+    </ResponseField>
+
+    <Warning>
+      The connection is **not** closed after an `error` message. You can continue sending messages.
+    </Warning>
+
+  </Tab>
+</Tabs>
+
+## Event summary table
+
+| Type | Direction | Broadcast scope |
+|------|-----------|----------------|
+| `subscribe` | client → server | — |
+| `unsubscribe` | client → server | — |
+| `welcome` | server → client | Per connection |
+| `subscribed` | server → client | Per connection |
+| `unsubscribed` | server → client | Per connection |
+| `match_created` | server → client | All connected clients |
+| `commentary` | server → client | Subscribers of the match only |
+| `error` | server → client | Per connection |

@@ -1,0 +1,157 @@
+---
+title: WebSocket overview
+description: Connect to the StatHub WebSocket server to receive real-time match and commentary events.
+---
+
+StatHub exposes a WebSocket endpoint that pushes live events to connected clients. Use it to display match updates and commentary without polling.
+
+## Endpoint
+
+```
+ws://localhost:8000/ws
+```
+
+In production, use the `wss://` scheme over TLS:
+
+```
+wss://your-domain.com/ws
+```
+
+<Note>
+  The upgrade request path must be exactly `/ws`. Any other path is rejected and the TCP socket is destroyed immediately.
+</Note>
+
+## Security
+
+Every WebSocket upgrade request passes through Arcjet middleware before the connection is accepted. Three rules are enforced:
+
+| Rule | Behavior |
+|------|----------|
+| Shield | Blocks common web attack patterns |
+| Bot detection | Blocks automated clients (search engines and preview bots are allowed) |
+| Sliding window rate limit | **5 messages per 2 seconds per IP** |
+
+Connections that fail any rule are terminated with a WebSocket close code before the handshake completes:
+
+| Close code | Reason |
+|------------|--------|
+| `1013` | Rate limit exceeded |
+| `1008` | Forbidden (shield or bot detection) |
+| `1011` | Server security error |
+
+<Warning>
+  Automated clients that are not search engines or link-preview bots may be blocked with close code `1008`. Use a standard browser WebSocket or a well-known HTTP client.
+</Warning>
+
+## Protocol details
+
+- All messages are JSON-encoded text frames.
+- Maximum payload size is **1 MB** (1,048,576 bytes).
+- Messages that cannot be parsed as JSON receive an `error` response.
+
+## Heartbeat
+
+The server sends a WebSocket ping to every connected client every **30 seconds**. Clients that do not respond with a pong are terminated. Standard browser `WebSocket` handles pong automatically.
+
+## Connection lifecycle
+
+<Steps>
+  <Step title="Open the connection">
+    Send an HTTP upgrade request to `ws://localhost:8000/ws`. The Arcjet middleware runs before the handshake completes.
+
+    ```javascript
+    const ws = new WebSocket('ws://localhost:8000/ws');
+    ```
+  </Step>
+
+  <Step title="Receive the welcome message">
+    Immediately after the connection is established, the server sends a `welcome` message.
+
+    ```json
+    { "type": "welcome" }
+    ```
+  </Step>
+
+  <Step title="Subscribe to a match">
+    Send a `subscribe` message with the integer `matchId` you want to follow.
+
+    ```json
+    { "type": "subscribe", "matchId": 42 }
+    ```
+
+    The server confirms with a `subscribed` message:
+
+    ```json
+    { "type": "subscribed", "matchId": 42 }
+    ```
+  </Step>
+
+  <Step title="Receive events">
+    While subscribed, the server pushes `commentary` events for that match. All connected clients (regardless of subscription) also receive `match_created` events when a new match is created.
+  </Step>
+
+  <Step title="Unsubscribe or disconnect">
+    Stop receiving events for a match by sending an `unsubscribe` message, or simply close the connection. All subscriptions are cleaned up automatically on disconnect.
+
+    ```json
+    { "type": "unsubscribe", "matchId": 42 }
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+```javascript
+const ws = new WebSocket('ws://localhost:8000/ws');
+
+ws.addEventListener('open', () => {
+  console.log('Connected to StatHub WebSocket');
+});
+
+ws.addEventListener('message', (event) => {
+  const message = JSON.parse(event.data);
+
+  switch (message.type) {
+    case 'welcome':
+      // Connection established — subscribe to a match
+      ws.send(JSON.stringify({ type: 'subscribe', matchId: 42 }));
+      break;
+
+    case 'subscribed':
+      console.log('Subscribed to match', message.matchId);
+      break;
+
+    case 'match_created':
+      console.log('New match created:', message.data);
+      break;
+
+    case 'commentary':
+      console.log('Commentary event:', message.data);
+      break;
+
+    case 'error':
+      console.error('Server error:', message.message);
+      break;
+  }
+});
+
+ws.addEventListener('close', (event) => {
+  console.log('Connection closed', event.code, event.reason);
+});
+
+// Unsubscribe from a match
+function unsubscribe(matchId) {
+  ws.send(JSON.stringify({ type: 'unsubscribe', matchId }));
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Events reference" icon="bolt" href="/api/websocket/events">
+    Full reference for every message type sent and received over the WebSocket connection.
+  </Card>
+  <Card title="API overview" icon="book" href="/api/overview">
+    HTTP endpoints, rate limiting, and authentication.
+  </Card>
+</CardGroup>
