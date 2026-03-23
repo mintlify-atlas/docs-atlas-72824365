@@ -70,18 +70,16 @@ Returns commentary entries for the match identified by `:id`, ordered by `create
 | `400`  | Invalid query parameters. The `details` field contains Zod validation issues. |
 | `500`  | Internal server error while fetching commentary. |
 
-<RequestExample>
+## Example
+
+<CodeGroup>
 
 ```bash cURL
 curl --request GET \
   --url 'http://localhost:8000/matches/2/commentary?limit=50'
 ```
 
-</RequestExample>
-
-<ResponseExample>
-
-```json 200
+```json 200 OK
 {
   "data": [
     {
@@ -102,7 +100,7 @@ curl --request GET \
 }
 ```
 
-```json 400
+```json 400 Invalid match ID
 {
   "error": "Invalid match ID.",
   "details": [
@@ -115,10 +113,10 @@ curl --request GET \
 }
 ```
 
-```json 500
+```json 500 Server error
 {
   "error": "Failed to fetch commentary."
 }
 ```
 
-</ResponseExample>
+</CodeGroup>

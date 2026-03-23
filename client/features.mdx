@@ -56,10 +56,10 @@ The active link is highlighted with a gradient using the sport-specific accent c
 
 <CardGroup cols={2}>
   <Card title="Home" icon="house">
-    The landing page at `/`. Intended to list matches and surface their current status (scheduled, live, or finished).
+    The landing page at `/`. Entry point to the application.
   </Card>
   <Card title="Quick View" icon="bolt">
-    Located at `/quickview`. A detailed view for a single match, designed to display a live commentary stream.
+    Located at `/quickview`. Intended as the detailed view for a single match and its live commentary stream.
   </Card>
   <Card title="Host" icon="circle-plus">
     Located at `/create`. A form page for creating a new match.
@@ -101,7 +101,8 @@ Authentication state is managed by `AuthContext` (`src/context/AuthContext.jsx`)
 | `login(userData, token)` | function | Persists the user and JWT token to `localStorage` and updates state |
 | `logout()` | function | Removes the user and token from `localStorage` and clears state |
 | `getToken()` | function | Returns the raw JWT string from `localStorage` |
-| `initAuth()` | function | Re-reads `localStorage` to restore auth state (called automatically on mount) |
+| `setUser` | function | React state setter for the user object |
+| `initAuth()` | function | Reads `localStorage` to restore auth state; called automatically on mount via `useEffect` |
 
 On mount, `AuthProvider` calls `initAuth()`, which reads `token` and `user` from `localStorage`. If both are present, the user object is restored from the stored JSON; otherwise the user is set to `null`.
 

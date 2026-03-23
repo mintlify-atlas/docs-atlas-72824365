@@ -108,7 +108,9 @@ The `status` field is set automatically using the following logic:
   WebSocket broadcast failures are caught silently — the HTTP response is unaffected if the broadcast fails.
 </Note>
 
-<RequestExample>
+## Example
+
+<CodeGroup>
 
 ```bash cURL
 curl --request POST \
@@ -125,11 +127,7 @@ curl --request POST \
   }'
 ```
 
-</RequestExample>
-
-<ResponseExample>
-
-```json 200
+```json 200 OK
 {
   "message": "Match created",
   "event": {
@@ -148,7 +146,7 @@ curl --request POST \
 }
 ```
 
-```json 400
+```json 400 Validation error
 {
   "error": "Invalid Payload.",
   "details": [
@@ -161,10 +159,10 @@ curl --request POST \
 }
 ```
 
-```json 500
+```json 500 Server error
 {
   "error": "Failed to create a match."
 }
 ```
 
-</ResponseExample>
+</CodeGroup>

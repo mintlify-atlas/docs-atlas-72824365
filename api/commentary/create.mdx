@@ -110,7 +110,9 @@ Inserts a new commentary entry for the match identified by `:id`. After a succes
   WebSocket broadcast failures are caught silently — the HTTP response is unaffected if the broadcast fails.
 </Note>
 
-<RequestExample>
+## Example
+
+<CodeGroup>
 
 ```bash cURL
 curl --request POST \
@@ -129,11 +131,7 @@ curl --request POST \
   }'
 ```
 
-</RequestExample>
-
-<ResponseExample>
-
-```json 201
+```json 201 Created
 {
   "data": {
     "id": 7,
@@ -152,7 +150,7 @@ curl --request POST \
 }
 ```
 
-```json 400
+```json 400 Validation error
 {
   "error": "Invalid commentary payload.",
   "details": [
@@ -165,10 +163,10 @@ curl --request POST \
 }
 ```
 
-```json 500
+```json 500 Server error
 {
   "error": "Failed to create commentary."
 }
 ```
 
-</ResponseExample>
+</CodeGroup>
